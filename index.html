@@ -288,7 +288,7 @@ function recalc(lista, ac, vc, hC, t12, perda, fMinG, fMaxG) {
     reqMinTotal += (p.dPmin / fatorPerda) / p.dec;
   }
 
-  // 3. Decisão de Alocação (O Fim do Sacrifício Silencioso)
+  // 3. Decisão de Alocação
   if (reqMinTotal <= pool) {
     // Sucesso: Distribuição Elástica do Excedente
     let surplusPool = pool - reqMinTotal;
@@ -305,7 +305,6 @@ function recalc(lista, ac, vc, hC, t12, perda, fMinG, fMaxG) {
     }
   } else {
     // Déficit: Inviolabilidade da Dose Mínima.
-    // Todos recebem a base. O Pool absorverá o rombo e ficará negativo.
     for (let p of pendentes) {
       p.doseAplicar = p.dPmin;
     }
@@ -320,14 +319,12 @@ function recalc(lista, ac, vc, hC, t12, perda, fMinG, fMaxG) {
     p.disp = atvCorrente;
     let usoFrasco = p.doseAplicar / fatorPerda;
     
-    // Removido o Math.max(..., 0). O frasco agora expõe o déficit real se secar.
     atvCorrente = atvCorrente - usoFrasco; 
     
     tA = p.hSim;
     p.isConstrained = (p.doseAplicar < p.dPmax - 0.05 && p.doseAplicar > 0);
   }
 
-  // Removido o Math.max(..., 0). O operador verá o saldo exato (positivo ou negativo).
   const atvFinal = atvCorrente; 
   return { lista: lc, atvFinal };
 }
@@ -401,18 +398,6 @@ function TelaPrincipal({cfg,setCfg,lista,setLista,cor,onDash,onCalc,setMenuOpen,
       vib(); setLista(p=>p.filter(x=>x.id!==id)); showToast(lang.pacienteRemovido);
     }
   }
-  function handleAutoDistribuir(){
-    vib();
-    if(!dispList.length)return;
-    let alterados = 0;
-    setLista(prev => prev.map(p => {
-      if (parseFloat(p.doseReal) > 0) return p;
-      const calcP = lc.find(x => x.id === p.id);
-      if(calcP && calcP.doseAplicar > 0) { alterados++; return {...p, doseReal: calcP.doseAplicar.toFixed(2)}; }
-      return {...p, doseReal: ""};
-    }));
-    showToast(<>{ICONS.scale} {lang.autoDistToast.replace("{k}", alterados)}</>);
-  }
   function addRow(){
     vib();
     const sorted=[...lista].sort((a,b)=>getRelMin(a.hSim, cfg.hCalib)-getRelMin(b.hSim, cfg.hCalib));
@@ -464,7 +449,6 @@ function TelaPrincipal({cfg,setCfg,lista,setLista,cor,onDash,onCalc,setMenuOpen,
         <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', padding:'12px 16px', borderBottom:'1px solid var(--border)', background:'var(--surface)'}}>
           <span style={{fontSize:14, fontWeight:800, color:'var(--text)'}}>{lang.operacaoTab} ({lista.length})</span>
           <div style={{display:'flex', gap:8}}>
-            {lista.length>0 && dispGlobal >= 0 && <button onClick={handleAutoDistribuir} className="ghost" style={{height:36, padding:'0 12px', borderRadius:8, fontSize:12}}><span style={{color:'var(--text)'}}>{ICONS.scale}</span> {lang.autoDistribuir}</button>}
             <button onClick={addRow} className="btn" style={{height:36, padding:'0 16px', borderRadius:8, fontSize:13}}>+ Adicionar Linha</button>
           </div>
         </div>
@@ -706,17 +690,6 @@ function TelaLista({cfg,setCfg,lista,setLista,cor,onNovo,onDash,ativa,showToast,
 
   function upd(id,updates){ setLista(prev=>prev.map(x=>x.id===id?{...x,...updates}:x)); }
   function del(id){vib();setLista(p=>p.filter(x=>x.id!==id));showToast(lang.pacienteRemovido);}
-  function handleAutoDistribuir(){
-    vib(); if(!dispList.length)return;
-    let alterados = 0;
-    setLista(prev => prev.map(p => {
-      if (parseFloat(p.doseReal) > 0) return p;
-      const calcP = lc.find(x => x.id === p.id);
-      if(calcP && calcP.doseAplicar > 0) { alterados++; return {...p, doseReal: calcP.doseAplicar.toFixed(2)}; }
-      return {...p, doseReal: ""};
-    }));
-    showToast(<>{ICONS.scale} {lang.autoDistToast.replace("{k}", alterados)}</>);
-  }
 
   const dispGlobal = atvFinal; 
   const pctGlobal = Math.max(0, Math.min(100, acN > 0 ? (dispGlobal / acN) * 100 : 0));
@@ -754,7 +727,6 @@ function TelaLista({cfg,setCfg,lista,setLista,cor,onNovo,onDash,ativa,showToast,
         <button onClick={()=>{vib();setParamAberto(!paramAberto)}} style={{background:'none',border:'none',color:'var(--muted)',fontWeight:800,fontSize:14,cursor:'pointer',display:'flex',alignItems:'center',gap:8,padding:'4px 0'}}>
           {ICONS.settings} <span style={{fontSize:16,transition:'transform .3s',display:'inline-block',transform:paramAberto?'rotate(180deg)':'rotate(0deg)'}}>▾</span>
         </button>
-        {lista.length>0 && dispGlobal >= 0 && <button onClick={handleAutoDistribuir} className="btn" style={{height:38,width:'auto',padding:'0 16px',borderRadius:12,fontSize:12,fontWeight:800,boxShadow:'none',background:'var(--alt)',color:'var(--text)',border:'1px solid var(--border)'}}><span style={{color:'var(--text)'}}>{ICONS.scale}</span> {lang.autoDistribuir}</button>}
       </div>
       
       {paramAberto && (
