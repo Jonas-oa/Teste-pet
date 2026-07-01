@@ -255,7 +255,7 @@ const getRelMin=(time,ref)=>{
   return m;
 };
 
-/* --- MOTOR MATEMÁTICO (ATUALIZADO COM GUILHOTINA CRONOLÓGICA) --- */
+/* --- MOTOR MATEMÁTICO --- */
 function recalc(lista, ac, vc, hC, t12, perda, fMinG, fMaxG) {
   let cA = parseFloat(ac) || 0;
   let calcList = [...lista].sort((a, b) => getRelMin(a.hSim, hC) - getRelMin(b.hSim, hC));
@@ -274,7 +274,6 @@ function recalc(lista, ac, vc, hC, t12, perda, fMinG, fMaxG) {
   let pool = cA;
   let pendentes = [];
   
-  // 1. Drenagem de Doses Reais (Fixo Absoluto)
   for (let p of lc) {
     if (!isNaN(parseFloat(p.doseReal)) && parseFloat(p.doseReal) > 0) {
       pool -= (parseFloat(p.doseReal) / fatorPerda) / p.dec;
@@ -284,7 +283,6 @@ function recalc(lista, ac, vc, hC, t12, perda, fMinG, fMaxG) {
     }
   }
 
-  // 2. Simulação Cronológica e Guilhotina
   let sobreviventes = [];
   let tempPool = pool;
   
@@ -292,19 +290,16 @@ function recalc(lista, ac, vc, hC, t12, perda, fMinG, fMaxG) {
     let reqMinPool = (p.dPmin / fatorPerda) / p.dec;
     if (tempPool >= reqMinPool) {
       sobreviventes.push(p);
-      tempPool -= reqMinPool; // Reserva temporária para garantir que os próximos tenham saldo
+      tempPool -= reqMinPool; 
     } else {
-      // Guilhotina Acionada: Paciente não atinge o mínimo. 
       p.guilhotina = true;
       p.doseRealExistente = (tempPool * p.dec) * fatorPerda;
-      // Ao não subtrair tempPool, o saldo residual volta pro pool dos sobreviventes.
-      tempPool = 0; // Zera para os próximos pacientes também caírem na guilhotina
+      tempPool = 0; 
     }
   }
 
-  // 3. Distribuição Elástica APENAS para os Sobreviventes
   let reqMinTotal = sobreviventes.reduce((s, p) => s + (p.dPmin / fatorPerda) / p.dec, 0);
-  let surplusPool = pool - reqMinTotal; // Surplus total após descontar o mínimo de quem sobreviveu
+  let surplusPool = pool - reqMinTotal; 
 
   let reqExtraMaxTotal = 0;
   for (let p of sobreviventes) {
@@ -319,7 +314,6 @@ function recalc(lista, ac, vc, hC, t12, perda, fMinG, fMaxG) {
     p.doseAplicar = p.dPmin + (P * extraMax);
   }
 
-  // 4. Projeção Linear Final (Consumo)
   let atvCorrente = cA;
   let tA = hC;
   for (let p of lc) {
@@ -1238,32 +1232,69 @@ function App(){
   useEffect(()=>{localStorage.setItem("petct-vib",vibOn);_vib=vibOn;},[vibOn]);
   useEffect(()=>{localStorage.setItem("petct-lang",langId);},[langId]);
   
+  // Monitor de Alterações Globais (Intervalo, Calibração, Min, Max)
   const prevHCalib = useRef(cfg.hCalib);
+  const prevIntervalo = useRef(cfg.intervalo);
+  const prevFMin = useRef(cfg.fMin);
+  const prevFMax = useRef(cfg.fMax);
+
   useEffect(() => {
-    if (cfg.hCalib && prevHCalib.current !== cfg.hCalib) {
+    const hCalibChanged = cfg.hCalib && prevHCalib.current !== cfg.hCalib;
+    const intervaloChanged = cfg.intervalo && prevIntervalo.current !== cfg.intervalo;
+    const fMinChanged = cfg.fMin !== prevFMin.current;
+    const fMaxChanged = cfg.fMax !== prevFMax.current;
+
+    if (hCalibChanged || intervaloChanged || fMinChanged || fMaxChanged) {
       setLista(prevLista => {
-        if (prevLista.length === 0) return prevLista;
-        
-        let sorted = [...prevLista].sort((a, b) => getRelMin(a.hSim, prevHCalib.current) - getRelMin(b.hSim, prevHCalib.current));
-        let currentTime = addMin(cfg.hCalib, 15);
-        const gap = Number(cfg.intervalo) || 25;
+        let novaLista = [...prevLista];
         let modificou = false;
 
-        const novaLista = sorted.map(p => {
-          if (!isNaN(parseFloat(p.doseReal)) && parseFloat(p.doseReal) > 0) {
-            return p;
+        // Se alterou a calibração ou o intervalo (gap), realinha os horários
+        if (hCalibChanged || intervaloChanged) {
+          if (novaLista.length > 0) {
+            novaLista.sort((a, b) => getRelMin(a.hSim, prevHCalib.current || cfg.hCalib) - getRelMin(b.hSim, prevHCalib.current || cfg.hCalib));
+            let currentTime = addMin(cfg.hCalib, 15);
+            const gap = Number(cfg.intervalo) || 25;
+
+            novaLista = novaLista.map(p => {
+              // Preserva o horário editado manualmente caso já tenha dose aplicada e
+              // avança a "pilha de horários" a partir do tempo que ele tomou.
+              if (!isNaN(parseFloat(p.doseReal)) && parseFloat(p.doseReal) > 0) {
+                currentTime = addMin(p.hSim, gap); 
+                return p;
+              }
+              let novoHorario = currentTime;
+              currentTime = addMin(currentTime, gap);
+              if (p.hSim !== novoHorario) {
+                modificou = true;
+                return { ...p, hSim: novoHorario };
+              }
+              return p;
+            });
           }
-          modificou = true;
-          let novoHorario = currentTime;
-          currentTime = addMin(currentTime, gap);
-          return { ...p, hSim: novoHorario };
-        });
+        }
+
+        // Se alterou a "Janela de Dose Padrão", aplica a todos os itens 
+        // (Isso faz com que o cálculo do motor reaja de imediato aos novos limites globais)
+        if (fMinChanged || fMaxChanged) {
+          novaLista = novaLista.map(p => {
+            if (p.fMin !== cfg.fMin || p.fMax !== cfg.fMax) {
+              modificou = true;
+              return { ...p, fMin: cfg.fMin, fMax: cfg.fMax };
+            }
+            return p;
+          });
+        }
 
         return modificou ? novaLista : prevLista;
       });
+
       prevHCalib.current = cfg.hCalib;
+      prevIntervalo.current = cfg.intervalo;
+      prevFMin.current = cfg.fMin;
+      prevFMax.current = cfg.fMax;
     }
-  }, [cfg.hCalib, cfg.intervalo]);
+  }, [cfg.hCalib, cfg.intervalo, cfg.fMin, cfg.fMax]);
 
   useEffect(()=>{
     localStorage.setItem("petct-ui-mode",uiMode);
