@@ -1,0 +1,1286 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
+  <title>PET·CT Dose Pro</title>
+  <meta name="mobile-web-app-capable" content="yes"/>
+  <meta name="apple-mobile-web-app-capable" content="yes"/>
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+  <meta name="apple-mobile-web-app-title" content="PET·CT Pro"/>
+  <meta name="theme-color" content="#0A84FF" id="theme-meta"/>
+  
+  <link rel="manifest" href="manifest.json" />
+  <link rel="apple-touch-icon" href="icone.png" />
+  <link rel="icon" href="icone.png" />
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <style>
+    :root {
+      --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      --font-mono: ui-monospace, "SF Mono", "Cascadia Code", "Roboto Mono", "Courier New", monospace;
+      --c: #0A84FF;
+      --c-light: color-mix(in srgb, var(--c) 15%, transparent);
+      --c-mid: color-mix(in srgb, var(--c) 30%, transparent);
+      --bg: #F2F2F7;
+      --surface: #FFFFFF;
+      --alt: #F9F9FB;
+      --text: #1C1C1E;
+      --text-soft: #3A3A3C;
+      --muted: #8E8E93;
+      --border: #E5E5EA;
+      --bfocus: #D1D1D6;
+      --success: #34C759;
+      --danger: #FF3B30;
+      --warning: #FF9500;
+      --time: #5E5CE6;
+      --shadow-sm: 0 4px 14px rgba(0,0,0,0.03);
+      --shadow-md: 0 10px 30px rgba(0,0,0,0.06);
+      --shadow-lg: 0 24px 50px rgba(0,0,0,0.08);
+      --radius: 20px;
+    }
+    .dark {
+      --bg: #000000;
+      --surface: #1C1C1E;
+      --alt: #2C2C2E;
+      --text: #F2F2F7;
+      --text-soft: #E5E5EA;
+      --muted: #8E8E93;
+      --border: #38383A;
+      --bfocus: #48484A;
+      --shadow-sm: 0 4px 14px rgba(0,0,0,0.25);
+      --shadow-md: 0 10px 30px rgba(0,0,0,0.4);
+      --shadow-lg: 0 24px 50px rgba(0,0,0,0.5);
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: var(--font-sans); -webkit-tap-highlight-color: transparent; }
+    html, body, #root { height: 100%; height: 100dvh; max-height: 100dvh; width: 100%; overflow: hidden; }
+    body { background: var(--bg); color: var(--text); position: fixed; transition: background .3s, color .3s; }
+    input, select { -webkit-appearance: none; appearance: none; font-family: inherit; color: var(--text); }
+    input[type=number]::-webkit-inner-spin-button { opacity: 1; }
+    select { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%238E8E93' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 14px center; padding-right: 36px !important; }
+    
+    .inp-clean { background: transparent; border: none; outline: none; font-family: inherit; font-size: inherit; font-weight: inherit; color: inherit; padding: 0; margin: 0; width: auto; appearance: none; border-radius: 0; }
+    .inp-clean:focus { border-bottom: 1.5px solid var(--c) !important; }
+    .inp-clean::-webkit-inner-spin-button, .inp-clean::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+
+    .screen { position: absolute; inset: 0; height: 100dvh; display: flex; flex-direction: column; background: var(--bg); transition: opacity .3s, transform .3s cubic-bezier(0.16, 1, 0.3, 1); will-change: transform; overflow: hidden; width: 100%; z-index: 1; }
+    .screen.hidden { opacity: 0; transform: translateX(30px); pointer-events: none; z-index: 0; }
+    .scroll { flex: 1; overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch; padding: 16px 16px calc(150px + env(safe-area-inset-bottom)); min-height: 0; width: 100%; }
+    .scroll.no-nav { padding-bottom: max(16px, env(safe-area-inset-bottom)); }
+
+    .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; margin-bottom: 12px; box-shadow: var(--shadow-sm); transition: transform 0.2s, box-shadow 0.2s; width: 100%; }
+    .sec { font-size: 11px; font-weight: 800; letter-spacing: 1.2px; color: var(--muted); text-transform: uppercase; margin: 24px 0 10px 8px; }
+    
+    .inp { width: 100%; border: 1.5px solid transparent; border-radius: 14px; padding: 0 16px; font-size: 15px; font-weight: 600; color: var(--text); background: var(--alt); outline: none; height: 50px; display: block; transition: all .2s; }
+    .inp:focus { border-color: var(--c); background: var(--surface); box-shadow: 0 4px 12px var(--c-light); }
+    .inp::placeholder { color: var(--muted); font-weight: 500; }
+    .lbl { font-size: 11px; font-weight: 700; color: var(--text-soft); margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px; display: block; }
+    
+    .g2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 12px; }
+    .g3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+    
+    .btn { width: 100%; height: 52px; border: none; border-radius: 16px; font-size: 16px; font-weight: 700; cursor: pointer; transition: all .2s cubic-bezier(0.16, 1, 0.3, 1); background: var(--c); color: #fff; box-shadow: var(--shadow-md); display: flex; align-items: center; justify-content: center; gap: 8px; padding: 0 24px;}
+    .btn:active { transform: scale(0.96); box-shadow: var(--shadow-sm); }
+    .btn:disabled { background: var(--border); cursor: not-allowed; color: var(--muted); box-shadow: none; }
+    
+    .ghost { background: var(--alt); border: 1px solid var(--border); color: var(--text); border-radius: 14px; font-weight: 600; font-size: 14px; cursor: pointer; transition: background .2s, transform .2s; padding: 0 16px; height: 48px; display: flex; align-items: center; justify-content: center; gap: 8px; }
+    .ghost:active { background: var(--border); transform: scale(0.97); }
+    
+    .nav { position: fixed; bottom: 0; left: 0; right: 0; background: color-mix(in srgb, var(--surface) 85%, transparent); backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px); border-top: 1px solid var(--border); display: flex; z-index: 100; padding-bottom: max(env(safe-area-inset-bottom), 16px); padding-top: 10px; }
+    .nav-btn { flex: 1; padding: 6px; background: none; border: none; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 4px; font-size: 11px; font-weight: 700; color: var(--muted); transition: color .2s; position: relative; }
+    .nav-btn.on { color: var(--c); }
+    .nav-btn.on::before { content: ''; position: absolute; top: -10px; left: 50%; transform: translateX(-50%); width: 32px; height: 3px; border-radius: 0 0 4px 4px; background: var(--c); }
+    .nav-icon { width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; border-radius: 10px; transition: all .2s; }
+    .nav-btn.on .nav-icon { background: var(--c-light); }
+    .nav-icon svg { width: 22px; height: 22px; }
+    .nav-badge { position: absolute; top: 2px; right: calc(50% - 24px); background: var(--danger); color: #fff; font-size: 10px; font-weight: 800; padding: 2px 7px; border-radius: 12px; min-width: 18px; text-align: center; border: 2px solid var(--surface); box-shadow: var(--shadow-sm); }
+    
+    .fab { position: fixed; bottom: calc(90px + env(safe-area-inset-bottom)); right: 20px; width: 60px; height: 60px; border-radius: 20px; background: var(--c); border: none; color: #fff; font-size: 32px; cursor: pointer; box-shadow: var(--shadow-lg); z-index: 99; display: flex; align-items: center; justify-content: center; transition: transform .2s cubic-bezier(0.16, 1, 0.3, 1); }
+    .fab:active { transform: scale(0.9); }
+    
+    .hdr { background: color-mix(in srgb, var(--surface) 85%, transparent); backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px); border-bottom: 1px solid var(--border); padding: 16px 20px; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-shrink: 0; width: 100%; z-index: 50; padding-top: max(env(safe-area-inset-top), 16px); }
+    
+    .toast { position: fixed; top: max(env(safe-area-inset-top), 20px); left: 50%; transform: translateX(-50%) translateY(-120px); background: var(--text); color: var(--bg); padding: 12px 24px; border-radius: 30px; font-weight: 600; font-size: 14px; z-index: 9999; transition: transform .4s cubic-bezier(0.16, 1, 0.3, 1); box-shadow: var(--shadow-lg); pointer-events: none; width: max-content; max-width: 90%; text-align: center; display: flex; align-items: center; gap: 8px; }
+    .toast.on { transform: translateX(-50%) translateY(0); }
+    
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+    .fi { animation: fadeIn .3s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+    
+    .dov { position: fixed; inset: 0; background: rgba(0,0,0,0.6); backdrop-filter: blur(4px); z-index: 1000; opacity: 0; visibility: hidden; transition: opacity .3s; }
+    .dov.on { opacity: 1; visibility: visible; }
+    .drw { position: fixed; top: 0; right: 0; bottom: 0; width: 88%; max-width: 400px; background: var(--surface); z-index: 1001; transform: translateX(100%); transition: transform .4s cubic-bezier(0.16, 1, 0.3, 1); overflow: hidden; display: flex; flex-direction: column; box-shadow: -15px 0 50px rgba(0,0,0,0.2); border-radius: 24px 0 0 24px; }
+    .drw.on { transform: translateX(0); }
+    .drw-hdr { display: flex; justify-content: space-between; align-items: center; padding: 24px 20px 16px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+    .drw-title { font-size: 22px; font-weight: 800; color: var(--text); letter-spacing: -0.5px; }
+    .drw-close { background: var(--alt); border: none; width: 36px; height: 36px; border-radius: 50%; font-size: 16px; color: var(--text); cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background 0.2s; }
+    .drw-body { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 18px; }
+    .drw-row { display: flex; justify-content: space-between; align-items: center; padding: 16px; border-radius: 16px; background: var(--alt); border: 1px solid var(--border); }
+    .drw-sep { height: 1px; background: var(--border); margin: 4px 0; }
+    
+    .tog { width: 52px; height: 30px; border-radius: 15px; border: none; cursor: pointer; position: relative; flex-shrink: 0; transition: background .3s; }
+    .tog-k { position: absolute; top: 3px; width: 24px; height: 24px; border-radius: 50%; background: #fff; transition: left .3s cubic-bezier(0.16, 1, 0.3, 1); box-shadow: 0 2px 5px rgba(0,0,0,0.2); }
+    
+    .frasco-bar-wrap { flex: 1; height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; margin-top: 6px;}
+    .frasco-bar { height: 100%; border-radius: 3px; transition: width .6s cubic-bezier(0.16, 1, 0.3, 1), background .4s; }
+
+    .hm-ok { border-left: 5px solid var(--success) !important; }
+    .hm-warn { border-left: 5px solid var(--warning) !important; }
+    .hm-danger { border-left: 5px solid var(--danger) !important; }
+    .hm-done { border-left: 5px solid var(--c) !important; }
+
+    .pc-row { padding: 16px; display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 14px; cursor: pointer; }
+    .pc-name { font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.2; display: flex; align-items: center; }
+    .pc-meta { color: var(--muted); font-weight: 600; display: flex; align-items: center; gap: 6px; }
+    .pc-nums { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; flex-shrink: 0; }
+    .pc-dose { font-size: 18px; font-weight: 900; line-height: 1; }
+    .pc-vol { font-size: 13px; font-weight: 700; color: var(--muted); }
+    .pc-status-bar { height: 4px; opacity: 0.8; }
+    
+    .px-block { padding: 16px 16px 0; }
+    .px-label { font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); margin-bottom: 12px; }
+    .dose-real-wrap { display: flex; align-items: center; border: 1.5px solid transparent; border-radius: 14px; overflow: hidden; background: var(--alt); height: 50px; transition: border-color 0.3s; }
+    .dose-real-wrap.filled { border-color: var(--success); background: var(--surface); }
+    .dose-real-inp { flex: 1; border: none; background: none; outline: none; font-size: 20px; font-weight: 800; font-family: var(--font-mono); color: var(--text); padding: 0 16px; width: 100%; height: 100%; text-align: center; }
+    .dose-real-unit { padding: 0 16px; font-size: 13px; font-weight: 700; color: var(--muted); border-left: 1px solid var(--border); height: 100%; display: flex; align-items: center; white-space: nowrap; }
+    .dose-real-clear { padding: 0 16px; background: none; border: none; border-left: 1px solid var(--border); cursor: pointer; color: var(--danger); display: flex; align-items: center; height: 100%; }
+    
+    .d-kpi { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 14px; }
+    .d-kpi-card { background: var(--surface); border: 1px solid var(--border); border-radius: 18px; padding: 18px; box-shadow: var(--shadow-sm); }
+    .d-kpi-lbl { font-size: 11px; font-weight: 800; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
+    .d-kpi-val { font-size: 28px; font-weight: 900; color: var(--text); font-family: var(--font-mono); line-height: 1; }
+    
+    /* ESTILOS DA TABELA EXCEL-LIKE */
+    .tbl-wrap { width: 100%; overflow-x: auto; background: var(--surface); border: 1px solid var(--border); border-radius: 16px; box-shadow: var(--shadow-sm); }
+    .tbl { width: 100%; border-collapse: collapse; text-align: center; }
+    .tbl th { background: var(--alt); color: var(--muted); font-size: 11px; font-weight: 800; text-transform: uppercase; padding: 14px 10px; border-bottom: 2px solid var(--border); white-space: nowrap; }
+    .tbl td { padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: middle; white-space: nowrap; }
+    .tbl tr:last-child td { border-bottom: none; }
+    .tbl tr { transition: background 0.2s; }
+    .tbl tr:hover { background: color-mix(in srgb, var(--alt) 50%, transparent); }
+    
+    .t-inp { width: 100%; background: transparent; border: 1px solid transparent; border-radius: 8px; padding: 8px; font-size: 15px; font-weight: 700; color: var(--text); text-align: center; font-family: var(--font-mono); transition: all 0.2s; -moz-appearance: textfield; }
+    .t-inp::-webkit-inner-spin-button, .t-inp::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+    .t-inp:focus { border-color: var(--c); background: var(--surface); box-shadow: 0 4px 12px var(--c-light); outline: none; }
+    .t-inp.txt { text-align: left; font-family: var(--font-sans); min-width: 150px; }
+    .t-inp.sm { font-size: 13px; font-weight: 600; padding: 6px; }
+
+    #pra-container { display: none; }
+    .mono { font-family: var(--font-mono); }
+  </style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+function applyColor(c){
+  document.documentElement.style.setProperty("--c",c);
+  document.documentElement.style.setProperty("--c-light",`color-mix(in srgb, ${c} 15%, transparent)`);
+  document.documentElement.style.setProperty("--c-mid",`color-mix(in srgb, ${c} 30%, transparent)`);
+  const m=document.getElementById("theme-meta");if(m)m.content=c;
+}
+window.applyColor=applyColor;
+
+if('serviceWorker' in navigator){
+  window.addEventListener('load',()=>{
+    navigator.serviceWorker.register('sw.js')
+      .then(()=>console.log('[PWA] SW registrado — offline-first ativo'))
+      .catch(err=>console.warn('[PWA] SW falhou:',err));
+  });
+}
+</script>
+<script type="text/babel">
+function applyColor(c){
+  document.documentElement.style.setProperty("--c",c);
+  document.documentElement.style.setProperty("--c-light",`color-mix(in srgb, ${c} 15%, transparent)`);
+  document.documentElement.style.setProperty("--c-mid",`color-mix(in srgb, ${c} 30%, transparent)`);
+  const m=document.getElementById("theme-meta");if(m)m.content=c;
+}
+const {useState,useEffect,useMemo,useRef}=React;
+
+const ICONS = {
+  lote: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M9 3H5a2 2 0 00-2 2v4m6-6h10a2 2 0 012 2v4M9 3v18m0 0h10a2 2 0 002-2V9M9 21H5a2 2 0 01-2-2V9m0 0h18"/></svg>,
+  lista: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg>,
+  calc: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="4" y="2" width="16" height="20" rx="2"/><line x1="8" y1="6" x2="16" y2="6"/><line x1="8" y1="10" x2="16" y2="10"/><line x1="8" y1="14" x2="12" y2="14"/></svg>,
+  settings: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>,
+  lang: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1 4-10z"></path></svg>,
+  moon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>,
+  color: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z"></path></svg>,
+  vibe: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"></rect><line x1="12" y1="18" x2="12.01" y2="18"></line><path d="M2 8h1M2 12h1M2 16h1M21 8h1M21 12h1M21 16h1"></path></svg>,
+  info: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>,
+  check: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>,
+  dash: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>,
+  scale: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 16l3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="M2 16l3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="M7 21h10"/><path d="M12 3v18"/><path d="M3 7h2c2 0 5-1 7-2 2 1 5 2 7 2h2"/></svg>,
+  empty: <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>,
+  trash: <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>,
+  pdf: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="12" y1="18" x2="12" y2="12"></line><line x1="9" y1="15" x2="15" y2="15"></line></svg>,
+  close: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+};
+
+class ErrorBoundary extends React.Component{
+  constructor(p){super(p);this.state={err:false,msg:''};}
+  static getDerivedStateFromError(e){return{err:true,msg:e.message};}
+  render(){
+    if(this.state.err)return(<div style={{padding:'40px 20px',textAlign:'center'}}><h2 style={{color:'var(--danger)',marginBottom:10}}>Erro</h2><code style={{display:'block',padding:14,background:'var(--alt)',borderRadius:10,fontSize:12,marginBottom:16,wordBreak:'break-all'}}>{this.state.msg}</code><button onClick={()=>window.location.reload()} className="btn">Recarregar</button></div>);
+    return this.props.children;
+  }
+}
+
+const FARMACOS={"Flúor-18 (¹⁸F)":109.77,"Gálio-68 (⁶⁸Ga)":67.71,"Carbono-11 (¹¹C)":20.39,"Nitrogênio-13 (¹³N)":9.97,"Oxigênio-15 (¹⁵O)":2.04,"Outro":110};
+const UPTAKE=60;
+const CFG0={farmaco:"Flúor-18 (¹⁸F)",mvCustom:"109.77",perda:"4",hCalib:"08:00",aCalib:"",vCalib:"",lote:"",uptake:60,intervalo:25,instituicao:"",fMin:"0.08",fMax:"0.12"};
+
+const getT12=(f,mv)=>f==="Outro"?(parseFloat(mv)||110):(FARMACOS[f]||109.77);
+const toMin=t=>{if(!t||!t.includes(':'))return 0;const[h,m]=t.split(":").map(Number);return(h||0)*60+(m||0);};
+const minsToTime=m=>{let v=m;if(v<0)v+=1440;return`${String(Math.floor(v/60)%24).padStart(2,'0')}:${String(v%60).padStart(2,'0')}`;};
+const addMin=(t,d)=>minsToTime(toMin(t)+d);
+const decair=(a,t12,dt)=>a*Math.pow(2,-dt/t12);
+const f1=v=>(v==null||isNaN(v))?"—":v.toFixed(1);
+const mbq=v=>isNaN(v)?"—":(v*37).toFixed(0);
+const nowt=()=>{const n=new Date();return`${String(n.getHours()).padStart(2,"0")}:${String(n.getMinutes()).padStart(2,"0")}`;};
+const dataHoje=()=>new Date().toLocaleDateString("pt-BR",{weekday:"long",day:"2-digit",month:"long",year:"numeric"});
+let _vib=true;
+const vib=()=>_vib&&navigator.vibrate&&navigator.vibrate(30);
+
+const getRelMin=(time,ref)=>{
+  let mTime=typeof time==='string'?toMin(time):time;
+  let mRef=typeof ref==='string'?toMin(ref):ref;
+  let m=mTime-mRef;
+  if(m<-720)m+=1440;
+  if(m>720)m-=1440;
+  return m;
+};
+
+/* --- MOTOR MATEMÁTICO --- */
+function recalc(lista, ac, vc, hC, t12, perda, fMinG, fMaxG) {
+  let cA = parseFloat(ac) || 0;
+  let calcList = [...lista].sort((a, b) => getRelMin(a.hSim, hC) - getRelMin(b.hSim, hC));
+  let fatorPerda = 1 - perda / 100;
+
+  let lc = calcList.map(p => {
+    const w = parseFloat(p.peso) || 0;
+    const fmn = parseFloat(p.fMin) || fMinG;
+    const fmx = parseFloat(p.fMax) || fMaxG;
+    const dPmin = w * fmn, dPmax = w * fmx;
+    let dt = Math.max(getRelMin(p.hSim, hC), 0);
+    let dec = Math.pow(0.5, dt / t12);
+    return { ...p, dPmin, dPmax, dt, dec };
+  });
+
+  let pool = cA;
+  let pendentes = [];
+  
+  // 1. Drenagem do Pool por Doses Reais (Intocável)
+  for (let p of lc) {
+    if (!isNaN(parseFloat(p.doseReal)) && parseFloat(p.doseReal) > 0) {
+      pool -= (parseFloat(p.doseReal) / fatorPerda) / p.dec;
+      p.doseAplicar = parseFloat(p.doseReal);
+    } else {
+      pendentes.push(p);
+    }
+  }
+
+  // 2. Cálculo da Necessidade Mínima Total
+  let reqMinTotal = 0;
+  for (let p of pendentes) {
+    reqMinTotal += (p.dPmin / fatorPerda) / p.dec;
+  }
+
+  // 3. Decisão de Alocação (O Fim do Sacrifício Silencioso)
+  if (reqMinTotal <= pool) {
+    // Sucesso: Distribuição Elástica do Excedente
+    let surplusPool = pool - reqMinTotal;
+    let reqExtraMaxTotal = 0;
+    for (let p of pendentes) {
+      let extraMax = Math.max(p.dPmax - p.dPmin, 0);
+      p.extraReqFull = (extraMax / fatorPerda) / p.dec;
+      reqExtraMaxTotal += p.extraReqFull;
+    }
+    let P = reqExtraMaxTotal > 0 ? Math.min(1, surplusPool / reqExtraMaxTotal) : 0;
+    for (let p of pendentes) {
+      let extraMax = Math.max(p.dPmax - p.dPmin, 0);
+      p.doseAplicar = p.dPmin + (P * extraMax);
+    }
+  } else {
+    // Déficit: Inviolabilidade da Dose Mínima.
+    // Todos recebem a base. O Pool absorverá o rombo e ficará negativo.
+    for (let p of pendentes) {
+      p.doseAplicar = p.dPmin;
+    }
+  }
+
+  // 4. Projeção Linear de Consumo Físico
+  let atvCorrente = cA;
+  let tA = hC;
+  for (let p of lc) {
+    let dtPasso = Math.max(getRelMin(p.hSim, tA), 0);
+    atvCorrente = decair(atvCorrente, t12, dtPasso);
+    p.disp = atvCorrente;
+    let usoFrasco = p.doseAplicar / fatorPerda;
+    
+    // Removido o Math.max(..., 0). O frasco agora expõe o déficit real se secar.
+    atvCorrente = atvCorrente - usoFrasco; 
+    
+    tA = p.hSim;
+    p.isConstrained = (p.doseAplicar < p.dPmax - 0.05 && p.doseAplicar > 0);
+  }
+
+  // Removido o Math.max(..., 0). O operador verá o saldo exato (positivo ou negativo).
+  const atvFinal = atvCorrente; 
+  return { lista: lc, atvFinal };
+}
+
+/* --- FUNÇÕES AUXILIARES --- */
+function getRisco(doseAplicar,dPmin,dPmax,temReal,doseRealVal){
+  if(temReal&&doseRealVal<dPmin-0.05)return'danger';
+  if(temReal&&doseRealVal>=dPmin-0.05)return'done';
+  if(doseAplicar>=dPmax-0.05)return'ok';
+  if(doseAplicar>=dPmin-0.05)return'warn';
+  return'danger';
+}
+
+function Fld({label,children,style}){
+  return <div style={{minWidth:0,...style}}><label className="lbl">{label}</label>{children}</div>;
+}
+
+function Toggle({ativo,onChange}){
+  return <button className="tog" onClick={onChange} style={{background:ativo?"var(--c)":"var(--bfocus)"}}>
+    <div className="tog-k" style={{left:ativo?25:3}}/>
+  </button>;
+}
+
+/* --- MENU INFORMAÇÕES (SOBRE) --- */
+function MenuSobre({lang}){
+  const [aberto,setAberto]=useState(false);
+  return <div>
+    <button onClick={()=>setAberto(!aberto)}
+      style={{width:'100%',display:'flex',alignItems:'center',justifyContent:'space-between',
+        background:'var(--alt)',border:'1px solid var(--border)',borderRadius:14,
+        padding:'14px 16px',cursor:'pointer',fontWeight:800,fontSize:13,
+        letterSpacing:1.5,textTransform:'uppercase',color:'var(--text-soft)'}}>
+      <span style={{display:'flex',alignItems:'center',gap:8}}><span style={{color:'var(--muted)'}}>{ICONS.info}</span> {lang.sobre}</span>
+      <span style={{fontSize:16,transition:'transform .3s cubic-bezier(0.16, 1, 0.3, 1)',display:'inline-block',transform:aberto?'rotate(180deg)':'rotate(0deg)'}}>▾</span>
+    </button>
+    {aberto&&<div className="fi" style={{marginTop:12,background:'var(--alt)',border:'1px solid var(--border)',borderRadius:14,padding:'18px 16px',display:'flex',flexDirection:'column',gap:14}}>
+      <div>
+        <div style={{fontSize:14,fontWeight:800,color:'var(--text)',marginBottom:6}}>PET·CT Dose Pro</div>
+        <div style={{fontSize:13,color:'var(--text-soft)',lineHeight:1.6,fontWeight:500}}>
+          Aplicativo clínico corporativo para gerenciamento de doses em exames PET/CT. Realiza cálculo de decaimento radioativo, alocação com distribuição elástica, controle de janela de atividade e registro de dose aplicada.
+        </div>
+      </div>
+      <div className="drw-sep"/>
+      <div style={{display:'flex',flexDirection:'column',gap:6}}>
+        <div style={{fontSize:11,fontWeight:800,letterSpacing:1.5,textTransform:'uppercase',color:'var(--muted)',marginBottom:4}}>Desenvolvido por</div>
+        <div style={{fontSize:14,fontWeight:800,color:'var(--text)'}}>Jonas Oliveira de Andrade</div>
+        <div style={{fontSize:13,color:'var(--muted)',fontWeight:600}}>Técnico em Radiologia · CRTR 04359T</div>
+        <div className="drw-sep" style={{margin:'6px 0'}}/>
+        <a href="tel:+5531997063013" style={{fontSize:13,color:'var(--c)',fontWeight:700,textDecoration:'none',display:'flex',alignItems:'center',gap:6}}>📞 +55 31 99706-3013</a>
+        <a href="mailto:jonas_oa@yahoo.com.br" style={{fontSize:13,color:'var(--c)',fontWeight:700,textDecoration:'none',display:'flex',alignItems:'center',gap:6}}>✉️ jonas_oa@yahoo.com.br</a>
+      </div>
+    </div>}
+  </div>;
+}
+
+/* --- TELA PRINCIPAL (EXCEL-LIKE / TABELA) --- */
+function TelaPrincipal({cfg,setCfg,lista,setLista,cor,onDash,onCalc,setMenuOpen,showToast,lang}){
+  const t12=getT12(cfg.farmaco,cfg.mvCustom);
+  const perda=parseFloat(cfg.perda)||4;
+  const fMinG=parseFloat(cfg.fMin)||0.08;
+  const fMxG=parseFloat(cfg.fMax)||0.12;
+  const acN=parseFloat(cfg.aCalib)||0;
+  const vcN=parseFloat(cfg.vCalib)||0;
+
+  const {lista:lc,atvFinal}=useMemo(()=>recalc(lista,cfg.aCalib,cfg.vCalib,cfg.hCalib,t12,perda,fMinG,fMxG),[lista,cfg,t12,perda,fMinG,fMxG]);
+  const dispList=useMemo(()=>[...lc].sort((a,b)=>getRelMin(a.hSim, cfg.hCalib)-getRelMin(b.hSim, cfg.hCalib)),[lc, cfg.hCalib]);
+
+  function upd(id,updates){ setLista(prev=>prev.map(x=>x.id===id ? {...x,...updates} : x)); }
+  function del(id){
+    if(confirm(lang.confirmarExclusao.replace("{nome}","este paciente"))){
+      vib(); setLista(p=>p.filter(x=>x.id!==id)); showToast(lang.pacienteRemovido);
+    }
+  }
+  function handleAutoDistribuir(){
+    vib();
+    if(!dispList.length)return;
+    let alterados = 0;
+    setLista(prev => prev.map(p => {
+      if (parseFloat(p.doseReal) > 0) return p;
+      const calcP = lc.find(x => x.id === p.id);
+      if(calcP && calcP.doseAplicar > 0) { alterados++; return {...p, doseReal: calcP.doseAplicar.toFixed(2)}; }
+      return {...p, doseReal: ""};
+    }));
+    showToast(<>{ICONS.scale} {lang.autoDistToast.replace("{k}", alterados)}</>);
+  }
+  function addRow(){
+    vib();
+    const sorted=[...lista].sort((a,b)=>getRelMin(a.hSim, cfg.hCalib)-getRelMin(b.hSim, cfg.hCalib));
+    const gap = Number(cfg.intervalo) || 25;
+    const sugerida = sorted.length ? addMin(sorted[sorted.length-1].hSim, gap) : addMin(cfg.hCalib||"08:00",15);
+    setLista(v=>[...v, { id: Date.now(), nome: "", peso: "", hSim: sugerida, fMin: cfg.fMin||"0.08", fMax: cfg.fMax||"0.12", doseReal: "" }]);
+  }
+
+  const dispGlobal = atvFinal; 
+  const pctGlobal = Math.max(0, Math.min(100, acN > 0 ? (dispGlobal / acN) * 100 : 0));
+  const barColor = dispGlobal < 0 ? "var(--danger)" : pctGlobal > 40 ? "var(--success)" : pctGlobal > 20 ? "var(--warning)" : "var(--danger)";
+
+  return <div className="screen">
+    <div className="hdr">
+      <div>
+        <div style={{fontSize:24,fontWeight:900,letterSpacing:"-0.5px"}}>PET·CT <span style={{color:cor}}>Dose</span></div>
+        <div style={{fontSize:12,color:"var(--muted)",fontWeight:600,marginTop:2}}>{dataHoje()}</div>
+      </div>
+      <div style={{display:'flex',gap:8}}>
+        <button onClick={()=>{vib();onCalc();}} className="ghost" style={{padding:'0 12px'}} title={lang.navCalc}>{ICONS.calc}</button>
+        <button onClick={()=>{vib();onDash();}} className="ghost" style={{padding:'0 12px'}} title={lang.dashboard}>{ICONS.dash}</button>
+        <button onClick={()=>{vib();setMenuOpen(true);}} className="ghost" style={{padding:'0 12px'}} title={lang.configuracoes}>{ICONS.settings}</button>
+      </div>
+    </div>
+
+    <div className="scroll no-nav" style={{display:'flex', flexDirection:'column', gap:16}}>
+      <div className="card" style={{padding:16, border:'none', marginBottom:0}}>
+        <div className="g3" style={{marginBottom:12}}>
+          <Fld label={lang.radiofarmacoLote}><select className="inp" value={cfg.farmaco} onChange={e=>setCfg({...cfg,farmaco:e.target.value})} style={{fontWeight:700, height:42}}>{Object.keys(FARMACOS).map(f=><option key={f}>{f}</option>)}</select></Fld>
+          <Fld label={lang.meiaVida}>{cfg.farmaco==="Outro"?<input className="inp" type="number" value={cfg.mvCustom} onChange={e=>setCfg({...cfg,mvCustom:e.target.value})} step="0.01" style={{height:42}}/>:<div className="inp" style={{background:"var(--bg)",color:"var(--muted)",display:"flex",alignItems:"center",borderColor:"transparent", height:42}}>{t12.toFixed(1)} min</div>}</Fld>
+          <Fld label={lang.perdaSeringa}><input className="inp" type="number" value={cfg.perda} onChange={e=>setCfg({...cfg,perda:e.target.value})} step="0.5" style={{height:42}}/></Fld>
+        </div>
+        <div className="g3" style={{alignItems:'end'}}>
+          <Fld label={lang.horario}><input className="inp mono" type="time" value={cfg.hCalib} onChange={e=>setCfg({...cfg,hCalib:e.target.value})} style={{fontWeight:800, height:46}}/></Fld>
+          <Fld label={lang.atividadeMci}><input className="inp mono" type="number" value={cfg.aCalib} onChange={e=>setCfg({...cfg,aCalib:e.target.value})} placeholder="Ex: 95.8" style={{borderColor:cor,borderWidth:2,background:'var(--surface)', height:46}}/></Fld>
+          <Fld label={lang.volumeMl}><input className="inp mono" type="number" value={cfg.vCalib} onChange={e=>setCfg({...cfg,vCalib:e.target.value})} placeholder="Ex: 0.8" style={{height:46}}/></Fld>
+        </div>
+      </div>
+      {(acN>0 && vcN>0) && (
+        <div style={{padding:'0 4px'}}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline'}}>
+            <span style={{fontSize:11,fontWeight:800,color:'var(--muted)',textTransform:'uppercase',letterSpacing:1}}>{lang.disponivel} Final</span>
+            <span style={{fontSize:16,fontWeight:900,fontFamily:'var(--font-mono)',color:barColor}}>{f1(dispGlobal)} <span style={{fontSize:11,fontWeight:700,color:'var(--muted)'}}>mCi</span></span>
+          </div>
+          <div className="frasco-bar-wrap"><div className="frasco-bar" style={{width:`${pctGlobal}%`,background:barColor}}/></div>
+        </div>
+      )}
+      <div className="tbl-wrap">
+        <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', padding:'12px 16px', borderBottom:'1px solid var(--border)', background:'var(--surface)'}}>
+          <span style={{fontSize:14, fontWeight:800, color:'var(--text)'}}>{lang.operacaoTab} ({lista.length})</span>
+          <div style={{display:'flex', gap:8}}>
+            {lista.length>0 && dispGlobal >= 0 && <button onClick={handleAutoDistribuir} className="ghost" style={{height:36, padding:'0 12px', borderRadius:8, fontSize:12}}><span style={{color:'var(--text)'}}>{ICONS.scale}</span> {lang.autoDistribuir}</button>}
+            <button onClick={addRow} className="btn" style={{height:36, padding:'0 16px', borderRadius:8, fontSize:13}}>+ Adicionar Linha</button>
+          </div>
+        </div>
+        <table className="tbl">
+          <thead>
+            <tr>
+              <th style={{textAlign:'left'}}>{lang.nomePaciente}</th><th>{lang.horario}</th><th>{lang.pesoKg}</th>
+              <th style={{color:'var(--warning)'}} title={lang.doseMin}>MÍN</th><th style={{color:'var(--warning)'}} title={lang.doseMax}>MÁX</th>
+              <th style={{color:'var(--c)'}}>PROG. (mCi)</th><th style={{color:'var(--success)'}}>DISP. (mCi)</th>
+              <th>VOL. (mL)</th><th style={{color:'var(--text)'}}>REAL (mCi)</th><th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {dispList.map((p, i) => {
+              const dtInj = getRelMin(p.hSim, cfg.hCalib);
+              const atvInj = decair(acN, t12, Math.max(dtInj, 0));
+              const conc = vcN > 0 ? atvInj / vcN : 0;
+              const doseRealVal = parseFloat(p.doseReal);
+              const temReal = !isNaN(doseRealVal) && doseRealVal > 0;
+              const doseExib = temReal ? doseRealVal : p.doseAplicar;
+              const vol = conc > 0 ? doseExib / conc : null;
+              const isDoseOk = temReal ? doseRealVal >= p.dPmin - 0.05 : p.doseAplicar >= p.dPmin - 0.05;
+              const dColor = isDoseOk ? 'var(--success)' : 'var(--danger)';
+              return (
+                <tr key={p.id}>
+                  <td><input className="t-inp txt" value={p.nome} onChange={e=>upd(p.id, {nome: e.target.value})} placeholder={`Paciente ${i+1}`} /></td>
+                  <td><input className="t-inp mono" type="time" value={p.hSim} onChange={e=>upd(p.id, {hSim: e.target.value})} /></td>
+                  <td><input className="t-inp mono" type="number" step="1" value={p.peso} onChange={e=>upd(p.id, {peso: e.target.value, doseReal:""})} placeholder="0" style={{width: 60}} /></td>
+                  <td><input className="t-inp mono sm" type="number" step="0.01" value={p.fMin || cfg.fMin} onChange={e=>upd(p.id, {fMin: e.target.value})} style={{width: 65, color:'var(--muted)'}} /></td>
+                  <td><input className="t-inp mono sm" type="number" step="0.01" value={p.fMax || cfg.fMax} onChange={e=>upd(p.id, {fMax: e.target.value})} style={{width: 65, color:'var(--muted)'}} /></td>
+                  <td>
+                    {parseFloat(p.peso) > 0 && <div style={{fontSize: 10, color: 'var(--muted)', fontWeight: 700, marginBottom: 2}}>{f1(p.dPmin)} ~ {f1(p.dPmax)}</div>}
+                    <div className="mono" style={{fontWeight:900, color: dColor}}>{f1(p.doseAplicar)}</div>
+                  </td>
+                  <td><div className="mono" style={{fontWeight:800, color:'var(--success)'}}>{f1(p.disp)}</div></td>
+                  <td><div className="mono" style={{fontWeight:700, color:'var(--text-soft)'}}>{vol != null && !isNaN(vol) ? vol.toFixed(2) : '—'}</div></td>
+                  <td style={{background: temReal ? 'var(--c-light)' : 'transparent'}}><input className="t-inp mono" type="number" step="0.1" value={p.doseReal} onChange={e=>upd(p.id, {doseReal: e.target.value})} placeholder="—" style={{width: 70, background: temReal ? 'var(--surface)' : 'var(--alt)'}} /></td>
+                  <td><button onClick={()=>del(p.id)} style={{background:'transparent', border:'none', color:'var(--danger)', cursor:'pointer', padding:8}}>{ICONS.trash}</button></td>
+                </tr>
+              )
+            })}
+            {!dispList.length && <tr><td colSpan="10" style={{padding:40, color:'var(--muted)', fontWeight:600}}>{lang.nenhumAgendamento}</td></tr>}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>;
+}
+
+/* --- TELAS ORIGINAIS MODO CARTÕES (Mobile First) --- */
+function TelaLote({cfg,setCfg,cor,ativa,onLimpar,setMenuOpen,showToast,lang}){
+  const acN=parseFloat(cfg.aCalib)||0,vcN=parseFloat(cfg.vCalib)||0;
+  const t12=getT12(cfg.farmaco,cfg.mvCustom);
+  const loteCompletoRef=useRef(!!(cfg.aCalib&&cfg.vCalib));
+  function handleACalibBlur(e){
+    const val=e.target.value;
+    if(val&&cfg.vCalib&&!loteCompletoRef.current){
+      loteCompletoRef.current=true; showToast(<>{ICONS.check} {lang.loteTab} salvo!</>);
+    }
+  }
+  function handleVCalibBlur(e){
+    const val=e.target.value;
+    if(val&&cfg.aCalib&&!loteCompletoRef.current){
+      loteCompletoRef.current=true; showToast(<>{ICONS.check} {lang.loteTab} salvo!</>);
+    }
+  }
+  return <div className={`screen${ativa?"":" hidden"}`}>
+    <div className="hdr">
+      <div>
+        <div style={{fontSize:24,fontWeight:900,letterSpacing:"-0.5px"}}>PET·CT <span style={{color:cor}}>Dose</span></div>
+        <div style={{fontSize:12,color:"var(--muted)",fontWeight:600,marginTop:2}}>{dataHoje()}</div>
+      </div>
+      <button onClick={()=>{vib();setMenuOpen(true);}} style={{background:"var(--alt)",border:"1px solid var(--border)",borderRadius:14,padding:"10px 14px",color:"var(--text)",cursor:"pointer",fontWeight:700,fontSize:14,display:'flex',alignItems:'center',gap:8,boxShadow:'var(--shadow-sm)'}}>{ICONS.settings}</button>
+    </div>
+    <div className="scroll">
+      <div className="sec">{lang.radiofarmacoLote}</div>
+      <div className="card" style={{padding:20,border:'none'}}>
+        <div className="g2" style={{marginBottom:16}}>
+          <Fld label={lang.isotopo}><select className="inp" value={cfg.farmaco} onChange={e=>setCfg({...cfg,farmaco:e.target.value})} style={{fontWeight:700}}>{Object.keys(FARMACOS).map(f=><option key={f}>{f}</option>)}</select></Fld>
+          <Fld label={cfg.farmaco==="Outro"?lang.meiaVidaMin:lang.meiaVida}>{cfg.farmaco==="Outro"?<input className="inp" type="number" value={cfg.mvCustom} onChange={e=>setCfg({...cfg,mvCustom:e.target.value})} step="0.01"/>:<div className="inp" style={{background:"var(--bg)",color:"var(--muted)",display:"flex",alignItems:"center",borderColor:"transparent"}}>{t12.toFixed(1)} min</div>}</Fld>
+        </div>
+        <div className="g2">
+          <Fld label={lang.perdaSeringa}><input className="inp" type="number" value={cfg.perda} onChange={e=>setCfg({...cfg,perda:e.target.value})} step="0.5"/></Fld>
+          <Fld label={lang.idLote}><input className="inp" value={cfg.lote} onChange={e=>setCfg({...cfg,lote:e.target.value})} placeholder={lang.opcional}/></Fld>
+        </div>
+      </div>
+      <div className="sec">{lang.calibracaoFrasco}</div>
+      <div className="card" style={{padding:20,border:'none'}}>
+        <div className="g3" style={{marginBottom:acN>0?18:0,alignItems:'end'}}>
+          <Fld label={lang.horario}><input className="inp mono" type="time" value={cfg.hCalib} onChange={e=>setCfg({...cfg,hCalib:e.target.value})} style={{fontWeight:800,fontSize:14,padding:'0 8px'}}/></Fld>
+          <Fld label={lang.atividadeMci}><input className="inp mono" type="number" value={cfg.aCalib} onChange={e=>setCfg({...cfg,aCalib:e.target.value})} onBlur={handleACalibBlur} placeholder="Ex: 30" style={{borderColor:cor,borderWidth:2,background:'var(--surface)'}}/></Fld>
+          <Fld label={lang.volumeMl}><input className="inp mono" type="number" value={cfg.vCalib} onChange={e=>setCfg({...cfg,vCalib:e.target.value})} onBlur={handleVCalibBlur} placeholder="Ex: 2.5"/></Fld>
+        </div>
+        {acN>0&&<div className="fi" style={{background:`var(--c-light)`,borderRadius:16,padding:"20px",display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:16}}>
+          <div>
+            <div style={{fontSize:11,fontWeight:800,color:cor,textTransform:'uppercase',letterSpacing:1}}>{lang.atividadeCalibrada}</div>
+            <div className="mono" style={{fontSize:34,fontWeight:900,color:'var(--text)',lineHeight:1,marginTop:6}}>{f1(acN)} <span style={{fontSize:14,color:'var(--muted)'}}>mCi</span></div>
+            <div style={{fontSize:12,color:'var(--muted)',marginTop:4,fontWeight:600}}>≈ {mbq(acN)} MBq</div>
+          </div>
+          {vcN>0&&<div style={{textAlign:'right'}}>
+            <div style={{fontSize:11,fontWeight:800,color:'var(--muted)',textTransform:'uppercase',letterSpacing:1}}>{lang.concentracao}</div>
+            <div className="mono" style={{fontSize:24,fontWeight:900,marginTop:6}}>{(acN/vcN).toFixed(2)}</div>
+            <div style={{fontSize:12,color:'var(--muted)',fontWeight:600}}>mCi/mL</div>
+          </div>}
+        </div>}
+      </div>
+      <button onClick={()=>{if(confirm(lang.confirmarApagar)){ vib();onLimpar();}}} className="ghost" style={{width:'100%',marginTop:18,color:'var(--danger)',borderColor:'color-mix(in srgb,var(--danger) 30%,transparent)',background:'color-mix(in srgb,var(--danger) 10%,transparent)'}}>{lang.apagarOperacao}</button>
+    </div>
+  </div>;
+}
+
+function PatientCard({p,isN,cor,acNum,vcNum,t12,hCalib,calibMin,onUpdate,onDelete,showToast,lang}){
+  const [exp,setExp]=useState(false);
+  const doseReal=p.doseReal||"";
+  const temReal=parseFloat(doseReal)>0;
+  const doseRealVal=parseFloat(doseReal)||0;
+  const r=getRisco(p.doseAplicar,p.dPmin,p.dPmax,temReal,doseRealVal);
+  const doseColor=r==='done'||r==='ok'?'var(--success)':r==='warn'?'var(--warning)':'var(--danger)';
+  const barColor=r==='done'?'var(--c)':r==='ok'?'var(--success)':r==='warn'?'var(--warning)':'var(--danger)';
+  const hmC=r==='done'?'hm-done':r==='ok'?'hm-ok':r==='warn'?'hm-warn':'hm-danger';
+
+  const doseExib=temReal?parseFloat(doseReal):p.doseAplicar;
+  const dtInj=getRelMin(p.hSim, hCalib);
+  const atvInj=decair(acNum,t12,Math.max(dtInj,0));
+  const conc=vcNum>0?atvInj/vcNum:0;
+  const vol=conc>0?doseExib/conc:null;
+
+  const [nome, setNome] = useState(p.nome);
+  const [peso, setPeso] = useState(p.peso);
+  const [fMin, setFMin] = useState(p.fMin || "0.08");
+  const [fMax, setFMax] = useState(p.fMax || "0.12");
+  const [hh,setHh]=useState(p.hSim.split(':')[0]);
+  const [mm,setMm]=useState(p.hSim.split(':')[1]);
+
+  useEffect(()=>{setNome(p.nome);},[p.nome]); useEffect(()=>{setPeso(p.peso);},[p.peso]);
+  useEffect(()=>{setFMin(p.fMin||"0.08");},[p.fMin]); useEffect(()=>{setFMax(p.fMax||"0.12");},[p.fMax]);
+  useEffect(()=>{setHh((p.hSim).split(':')[0]);},[p.hSim]); useEffect(()=>{setMm((p.hSim).split(':')[1]);},[p.hSim]);
+
+  function setHora(m){ onUpdate(p.id,{hSim:minsToTime(m)}); }
+  function confirmarHora(){
+    const h=Math.max(0,Math.min(23,parseInt(hh)||0)); const m=Math.max(0,Math.min(59,parseInt(mm)||0));
+    const novoMin=h*60+m;
+    if(getRelMin(novoMin, hCalib)<0){
+      showToast(lang.injecaoMenorCalib.replace("{h}",minsToTime(novoMin)).replace("{c}",hCalib));
+      setHh((p.hSim).split(':')[0]); setMm((p.hSim).split(':')[1]); return;
+    }
+    setHora(novoMin); setHh(String(h).padStart(2,'0')); setMm(String(m).padStart(2,'0'));
+  }
+  function handleBlurHora(e){ const next=e.relatedTarget; if(!e.currentTarget.contains(next)) confirmarHora(); }
+  function handleRealChange(val){onUpdate(p.id,{doseReal:val});}
+
+  return(
+    <div className={`card fi ${hmC}`} style={{border:isN?`2px solid ${cor}`:undefined}}>
+      <div className="pc-row" onClick={()=>{vib();setExp(!exp);}}>
+        <div style={{minWidth:0}}>
+          <div className="pc-name" style={{fontSize: exp ? 20 : 16, transition: 'font-size 0.3s cubic-bezier(0.16, 1, 0.3, 1)'}}>
+            {isN&&<span style={{color:cor,marginRight:6,fontSize:14}}>✦</span>}
+            {exp ? <input className="inp-clean" value={nome} onChange={e=>setNome(e.target.value)} onBlur={()=>onUpdate(p.id, {nome:nome.trim()})} onClick={e=>e.stopPropagation()} style={{width:'100%'}} /> : <span>{p.nome}</span>}
+          </div>
+          <div className="pc-meta" style={{marginTop: exp ? 8 : 4}}>
+            {exp ? (
+              <div style={{display:'flex', alignItems:'center', color:'var(--c)'}} onBlur={handleBlurHora} onClick={e=>e.stopPropagation()}>
+                <input className="inp-clean" type="number" inputMode="numeric" min="0" max="23" value={hh} onChange={e=>setHh(e.target.value.slice(-2))} style={{width:34, fontSize:24, fontWeight:900, textAlign:'center', fontFamily:'var(--font-mono)'}} />
+                <span style={{fontSize:24, fontWeight:900, margin:'0 2px', opacity:0.5}}>:</span>
+                <input className="inp-clean" type="number" inputMode="numeric" min="0" max="59" value={mm} onChange={e=>setMm(e.target.value.slice(-2))} style={{width:34, fontSize:24, fontWeight:900, textAlign:'center', fontFamily:'var(--font-mono)'}} />
+              </div>
+            ) : <span style={{fontSize:16,fontWeight:700,color:'var(--text)'}}>{p.hSim}</span>}
+            
+            <span style={{fontSize: exp ? 14 : 12, color:'var(--muted)', fontWeight:600, display:'flex', alignItems:'center', marginLeft: 10}}>
+              {exp ? <><input className="inp-clean" type="number" inputMode="decimal" value={peso} onChange={e=>setPeso(e.target.value)} onBlur={()=>onUpdate(p.id, {peso, doseReal:""})} onClick={e=>e.stopPropagation()} style={{width: 44, textAlign:'center', margin:'0 4px', fontSize:15, fontWeight:700, color:'var(--text)'}} /> kg</> : <span>{' • '}{p.peso} kg</span>}
+            </span>
+          </div>
+        </div>
+        <div style={{display:'flex',alignItems:'center',gap:10,flexShrink:0}}>
+          <div className="pc-nums">
+            <div style={{display:'flex',alignItems:'baseline',gap:4}}><span className="mono pc-dose" style={{color:doseColor}}>{f1(doseExib)}</span><span style={{fontSize:11,color:'var(--muted)',fontWeight:700}}>mCi</span></div>
+            <div style={{display:'flex',alignItems:'baseline',gap:4}}><span className="mono pc-vol">{vol!=null&&!isNaN(vol)?vol.toFixed(2):'—'}</span><span style={{fontSize:11,color:'var(--muted)',fontWeight:700}}>mL</span></div>
+          </div>
+        </div>
+      </div>
+      <div className="pc-status-bar" style={{background:barColor}}/>
+
+      {exp&&(
+        <div style={{borderTop:'1px solid var(--border)',background:'var(--surface)',paddingBottom:16}} onClick={e=>e.stopPropagation()}>
+          <div className="px-block" style={{marginBottom:18}}>
+            <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:12, marginBottom:18}}>
+              <div style={{background:'var(--alt)', border:'1px solid var(--border)', borderRadius:14, padding:'10px 14px'}}>
+                <div style={{fontSize:10, fontWeight:800, color:'var(--muted)', textTransform:'uppercase'}}>{lang.doseMin} (mCi/kg)</div>
+                <input className="inp-clean" type="number" step="0.01" value={fMin} onChange={e=>setFMin(e.target.value)} onBlur={()=>onUpdate(p.id, {fMin, doseReal:""})} style={{fontSize:16, fontWeight:700, color:'var(--text)', width:'100%', marginTop:4}} onClick={e=>e.stopPropagation()}/>
+              </div>
+              <div style={{background:'var(--alt)', border:'1px solid var(--border)', borderRadius:14, padding:'10px 14px'}}>
+                <div style={{fontSize:10, fontWeight:800, color:'var(--muted)', textTransform:'uppercase'}}>{lang.doseMax} (mCi/kg)</div>
+                <input className="inp-clean" type="number" step="0.01" value={fMax} onChange={e=>setFMax(e.target.value)} onBlur={()=>onUpdate(p.id, {fMax, doseReal:""})} style={{fontSize:16, fontWeight:700, color:'var(--text)', width:'100%', marginTop:4}} onClick={e=>e.stopPropagation()}/>
+              </div>
+            </div>
+            <div className="px-label" style={{display:'flex', alignItems:'center'}}>
+              {lang.doseAplicada}{p.isConstrained&&<span style={{color:'var(--warning)',marginLeft:8,fontSize:10,fontWeight:700,textTransform:'none',display:'flex',alignItems:'center',gap:4}}>{ICONS.info} {lang.atividadeLimitada}</span>}
+            </div>
+            <div className={`dose-real-wrap${temReal?' filled':''}`}>
+              <input className="dose-real-inp" type="number" inputMode="decimal" step="0.1" placeholder="0.0" value={doseReal} onChange={e=>handleRealChange(e.target.value)} onClick={e=>e.stopPropagation()} />
+              <span className="dose-real-unit">mCi</span>
+              {temReal&&(<button className="dose-real-clear" onClick={(e)=>{e.stopPropagation();handleRealChange("");}}>{ICONS.close}</button>)}
+            </div>
+            <div style={{marginTop:10,display:'flex',justifyContent:'center',gap:16}}>
+              {[{l:'mín',v:p.dPmin},{l:'máx',v:p.dPmax}].map(({l,v})=>(
+                <span key={l} style={{fontSize:11,color:'var(--muted)',fontWeight:600}}>{l} <span className="mono" style={{fontWeight:800,color:'var(--text)',opacity:.7}}>{f1(v)}</span></span>
+              ))}
+              <span style={{fontSize:11,color:'var(--muted)',fontWeight:600}}>mCi</span>
+            </div>
+            {p.disp>0&&<div style={{marginTop:8,fontSize:11,color:'var(--muted)',fontWeight:600,textAlign:'center'}}>{lang.atividadeAtual} → <span className="mono" style={{fontWeight:800,color:'var(--text)',opacity:.8}}>{f1(p.disp)} mCi</span></div>}
+          </div>
+          <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginTop:12, padding:'16px 20px 0', borderTop:'1px solid var(--border)'}}>
+            <span style={{fontSize:11, color:'var(--muted)', fontWeight:600}}>ID: {p.id}</span>
+            <button onClick={(e)=>{e.stopPropagation(); if(confirm(lang.confirmarExclusao.replace("{nome}",p.nome))) onDelete(p.id);}} style={{background:'transparent', border:'none', color:'var(--danger)', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', padding:6}}>{ICONS.trash}</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TelaLista({cfg,setCfg,lista,setLista,cor,onNovo,onDash,ativa,showToast,onIrLote,lang}){
+  const t12=getT12(cfg.farmaco,cfg.mvCustom); const perda=parseFloat(cfg.perda)||4;
+  const fMinG=parseFloat(cfg.fMin)||0.08; const fMxG=parseFloat(cfg.fMax)||0.12;
+  const acN=parseFloat(cfg.aCalib)||0; const vcNum=parseFloat(cfg.vCalib)||0;
+  const [paramAberto, setParamAberto] = useState(false);
+
+  const {lista:lc,atvFinal}=useMemo(()=>recalc(lista,cfg.aCalib,cfg.vCalib,cfg.hCalib,t12,perda,fMinG,fMxG),[lista,cfg,t12,perda,fMinG,fMxG]);
+  const dispList=useMemo(()=>[...lc].sort((a,b)=>getRelMin(a.hSim, cfg.hCalib)-getRelMin(b.hSim, cfg.hCalib)),[lc, cfg.hCalib]);
+  const calibMin=toMin(cfg.hCalib||"09:00");
+  const [agora,setAgora]=useState(nowt());
+  useEffect(()=>{const t=setInterval(()=>setAgora(nowt()),60000);return()=>clearInterval(t);},[]);
+
+  const proxId=useMemo(()=>{
+    const futuros=dispList.filter(p=>getRelMin(p.hSim, agora)>=0);
+    if(futuros.length===0)return null;
+    return futuros.reduce((a,b)=>getRelMin(a.hSim, agora)<=getRelMin(b.hSim, agora)?a:b).id;
+  },[dispList,agora]);
+
+  function upd(id,updates){ setLista(prev=>prev.map(x=>x.id===id?{...x,...updates}:x)); }
+  function del(id){vib();setLista(p=>p.filter(x=>x.id!==id));showToast(lang.pacienteRemovido);}
+  function handleAutoDistribuir(){
+    vib(); if(!dispList.length)return;
+    let alterados = 0;
+    setLista(prev => prev.map(p => {
+      if (parseFloat(p.doseReal) > 0) return p;
+      const calcP = lc.find(x => x.id === p.id);
+      if(calcP && calcP.doseAplicar > 0) { alterados++; return {...p, doseReal: calcP.doseAplicar.toFixed(2)}; }
+      return {...p, doseReal: ""};
+    }));
+    showToast(<>{ICONS.scale} {lang.autoDistToast.replace("{k}", alterados)}</>);
+  }
+
+  const dispGlobal = atvFinal; 
+  const pctGlobal = Math.max(0, Math.min(100, acN > 0 ? (dispGlobal / acN) * 100 : 0));
+  const barColor = dispGlobal < 0 ? "var(--danger)" : pctGlobal > 40 ? "var(--success)" : pctGlobal > 20 ? "var(--warning)" : "var(--danger)";
+
+  return <div className={`screen${ativa?"":" hidden"}`}>
+    <div className="hdr">
+      <div>
+        <div style={{fontSize:22,fontWeight:900,letterSpacing:"-.5px"}}>{lang.operacaoTab} <span style={{color:cor}}>{lista.length>0?lista.length:""}</span></div>
+        <div style={{fontSize:12,color:"var(--muted)",fontWeight:600,marginTop:2}}>{cfg.farmaco}</div>
+      </div>
+      <button onClick={()=>{vib();onDash();}} className="ghost" style={{height:42,width:42,padding:0,borderRadius:12}}>{ICONS.dash}</button>
+    </div>
+
+    {lista.length>0&&(
+      <div style={{padding:'12px 20px 10px',flexShrink:0,background:'var(--bg)'}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:6}}>
+          <span style={{fontSize:11,fontWeight:800,color:'var(--muted)',textTransform:'uppercase',letterSpacing:1}}>{lang.disponivel}</span>
+          <span style={{fontSize:16,fontWeight:900,fontFamily:'var(--font-mono)',color:barColor}}>{f1(dispGlobal)} <span style={{fontSize:11,fontWeight:700,color:'var(--muted)'}}>mCi</span></span>
+        </div>
+        <div className="frasco-bar-wrap" style={{height:6,borderRadius:3, marginTop:0}}>
+          <div className="frasco-bar" style={{width:`${pctGlobal}%`,background:barColor,borderRadius:3}}/>
+        </div>
+      </div>
+    )}
+
+    <div className="scroll" style={{paddingTop:12}}>
+      {(!cfg.aCalib||!cfg.vCalib)&&(
+        <div className="fi" style={{background:'color-mix(in srgb,var(--warning) 15%,transparent)',border:'1px solid color-mix(in srgb,var(--warning) 40%,transparent)',borderRadius:16,padding:'14px 18px',marginBottom:16,display:'flex',alignItems:'center',justifyContent:'space-between',gap:12}}>
+          <span style={{fontSize:13,fontWeight:700,color:'var(--warning)',lineHeight:1.4}}>{lang.dadosFrascoIncompletos}</span>
+          <button onClick={()=>{vib();onIrLote();}} style={{flexShrink:0,background:'var(--warning)',color:'#fff',border:'none',borderRadius:10,padding:'8px 12px',fontWeight:800,fontSize:12,cursor:'pointer',boxShadow:'var(--shadow-sm)'}}>{lang.irParaLote}</button>
+        </div>
+      )}
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12,paddingTop:4}}>
+        <button onClick={()=>{vib();setParamAberto(!paramAberto)}} style={{background:'none',border:'none',color:'var(--muted)',fontWeight:800,fontSize:14,cursor:'pointer',display:'flex',alignItems:'center',gap:8,padding:'4px 0'}}>
+          {ICONS.settings} <span style={{fontSize:16,transition:'transform .3s',display:'inline-block',transform:paramAberto?'rotate(180deg)':'rotate(0deg)'}}>▾</span>
+        </button>
+        {lista.length>0 && dispGlobal >= 0 && <button onClick={handleAutoDistribuir} className="btn" style={{height:38,width:'auto',padding:'0 16px',borderRadius:12,fontSize:12,fontWeight:800,boxShadow:'none',background:'var(--alt)',color:'var(--text)',border:'1px solid var(--border)'}}><span style={{color:'var(--text)'}}>{ICONS.scale}</span> {lang.autoDistribuir}</button>}
+      </div>
+      
+      {paramAberto && (
+        <div className="fi" style={{marginBottom:16,background:'var(--alt)',border:'1px solid var(--border)',borderRadius:16,padding:'16px'}}>
+          <div>
+            <div style={{fontSize:11,fontWeight:800,letterSpacing:1.5,textTransform:'uppercase',color:'var(--muted)',marginBottom:12}}>{lang.janelaDose} Padrão</div>
+            <div className="g2">
+              <Fld label={lang.doseMin}><input className="inp" type="number" step="0.01" value={cfg.fMin} onChange={e=>setCfg({...cfg,fMin:e.target.value})}/></Fld>
+              <Fld label={lang.doseMax}><input className="inp" type="number" step="0.01" value={cfg.fMax} onChange={e=>setCfg({...cfg,fMax:e.target.value})}/></Fld>
+            </div>
+          </div>
+          <div className="g2" style={{marginTop:16}}>
+            <Fld label={lang.captacao}><input className="inp" type="number" value={cfg.uptake??60} onChange={e=>setCfg({...cfg,uptake:e.target.value===""?"":parseInt(e.target.value)})} onBlur={e=>setCfg(c=>({...c,uptake:parseInt(e.target.value)||60}))}/></Fld>
+            <Fld label={lang.gapInjecao}><input className="inp" type="number" value={cfg.intervalo??25} onChange={e=>setCfg({...cfg,intervalo:e.target.value===""?"":parseInt(e.target.value)})} onBlur={e=>setCfg(c=>({...c,intervalo:parseInt(e.target.value)||25}))}/></Fld>
+          </div>
+        </div>
+      )}
+
+      {!lista.length&&<div style={{textAlign:'center',padding:'80px 20px',color:'var(--muted)',display:'flex',flexDirection:'column',alignItems:'center'}}>
+        <div style={{color:'var(--border)',marginBottom:16}}>{ICONS.empty}</div>
+        <div style={{fontSize:18,fontWeight:800,color:'var(--text)'}}>{lang.nenhumAgendamento}</div>
+        <div style={{marginTop:8,fontSize:14,fontWeight:500}}>{lang.toqueMais}</div>
+      </div>}
+
+      {dispList.map(p=>( <PatientCard key={p.id} p={p} isN={p.id===proxId} cor={cor} acNum={acN} vcNum={vcNum} t12={t12} hCalib={cfg.hCalib||"09:00"} calibMin={calibMin} onUpdate={upd} onDelete={del} showToast={showToast} lang={lang}/> ))}
+    </div>
+    <button className="fab" onClick={()=>{vib();onNovo();}}>+</button>
+  </div>;
+}
+
+function TelaNovo({cfg,lista,onAdd,onBack,cor,ativa,showToast,lang}){
+  const[nome,setNome]=useState(""),[ peso,setPeso]=useState("");
+  const[hh,setHh]=useState("09"),[mm,setMm]=useState("00");
+  const[fMnC,setFMnC]=useState(cfg.fMin||"0.08"),[fMxC,setFMxC]=useState(cfg.fMax||"0.12");
+  const[paramOpen,setParamOpen]=useState(false);
+  const h=`${hh.padStart(2,'0')}:${mm.padStart(2,'0')}`;
+
+  function confirmarHoraBlur(e){
+    if(!e.currentTarget.contains(e.relatedTarget)){
+      const hv=Math.max(0,Math.min(23,parseInt(hh)||0)); const mv=Math.max(0,Math.min(59,parseInt(mm)||0));
+      setHh(String(hv).padStart(2,'0')); setMm(String(mv).padStart(2,'0'));
+    }
+  }
+
+  const ativaRef=useRef(false);
+  useEffect(()=>{
+    if(ativa&&!ativaRef.current){
+      const sorted=[...lista].sort((a,b)=>getRelMin(a.hSim, cfg.hCalib)-getRelMin(b.hSim, cfg.hCalib));
+      const gap = Number(cfg.intervalo) || 25;
+      const sugerida=sorted.length?addMin(sorted[sorted.length-1].hSim, gap):addMin(cfg.hCalib||"08:00",15);
+      setHh(sugerida.split(':')[0]); setMm(sugerida.split(':')[1]);
+      setFMnC(cfg.fMin||"0.08"); setFMxC(cfg.fMax||"0.12"); setParamOpen(false);
+    }
+    ativaRef.current=ativa;
+  },[ativa, cfg]);
+  const w=parseFloat(peso)||0;
+
+  return <div className={`screen${ativa?"":" hidden"}`} style={{zIndex:200}}>
+    <div className="hdr">
+      <button onClick={onBack} className="ghost" style={{padding:'0 16px'}}>{lang.cancelar}</button>
+      <div style={{fontWeight:900,fontSize:18}}>{lang.novoAgendamento}</div>
+      <div style={{width:80}}/>
+    </div>
+    <div className="scroll">
+      <div className="card" style={{padding:20,border:'none',marginTop:16}}>
+        <Fld label={lang.nomePaciente} style={{marginBottom:18}}>
+          <input className="inp" value={nome} onChange={e=>setNome(e.target.value)} placeholder={lang.nomeCompleto} autoCapitalize="words" style={{fontSize:18,fontWeight:700,height:56}}/>
+        </Fld>
+        <div className="g2">
+          <Fld label={lang.pesoKg}><input className="inp mono" type="number" value={peso} onChange={e=>setPeso(e.target.value)} placeholder="0.0" style={{fontSize:20,fontWeight:800,height:56,color:cor,background:'var(--surface)',borderColor:cor}}/></Fld>
+          <Fld label={lang.horaInjecao}>
+            <div style={{display:'flex',alignItems:'center',border:'1.5px solid var(--c)',borderRadius:14,overflow:'hidden',background:'var(--surface)',height:56,gap:0,boxShadow:'0 4px 12px var(--c-light)'}} onBlur={confirmarHoraBlur}>
+              <input type="number" inputMode="numeric" min="0" max="23" value={hh} onChange={e=>setHh(e.target.value.slice(-2))} style={{flex:1,textAlign:'center',fontFamily:'monospace',fontSize:20,fontWeight:800,color:'var(--c)',background:'none',border:'none',outline:'none',height:'100%'}}/>
+              <span style={{fontFamily:'monospace',fontSize:20,fontWeight:800,color:'var(--c)'}}>:</span>
+              <input type="number" inputMode="numeric" min="0" max="59" value={mm} onChange={e=>setMm(e.target.value.slice(-2))} style={{flex:1,textAlign:'center',fontFamily:'monospace',fontSize:20,fontWeight:800,color:'var(--c)',background:'none',border:'none',outline:'none',height:'100%'}}/>
+            </div>
+          </Fld>
+        </div>
+      </div>
+      <div style={{marginBottom:16}}>
+        <button onClick={()=>setParamOpen(!paramOpen)} style={{width:'100%',display:'flex',alignItems:'center',justifyContent:'space-between',background:'var(--alt)',border:'1px solid var(--border)',borderRadius:paramOpen?'16px 16px 0 0':'16px',padding:'14px 18px',cursor:'pointer',fontWeight:800,fontSize:13,letterSpacing:1.5,textTransform:'uppercase',color:'var(--muted)'}}>
+          <span style={{display:'flex',alignItems:'center',gap:8}}>{ICONS.settings} {lang.janelaDose} (Individual)</span>
+          <span style={{fontSize:16,transition:'transform .3s',display:'inline-block',transform:paramOpen?'rotate(180deg)':'rotate(0deg)'}}>▾</span>
+        </button>
+        {paramOpen && (
+          <div className="fi" style={{background:'var(--surface)',border:'1px solid var(--border)',borderTop:'none',borderRadius:'0 0 16px 16px',padding:'18px'}}>
+            <div className="g2">
+              <Fld label={lang.doseMin}><input className="inp" type="number" step="0.01" value={fMnC} onChange={e=>setFMnC(e.target.value)}/></Fld>
+              <Fld label={lang.doseMax}><input className="inp" type="number" step="0.01" value={fMxC} onChange={e=>setFMxC(e.target.value)}/></Fld>
+            </div>
+          </div>
+        )}
+      </div>
+      <div style={{display:'flex',gap:10,marginBottom:16}}>
+        {[[lang.injecao,h],[lang.sala,addMin(h,cfg.uptake||UPTAKE)],[lang.termino,addMin(addMin(h,cfg.uptake||UPTAKE),25)]].map(([l,v])=>(
+          <div key={l} style={{flex:1,background:'var(--surface)',border:'1px solid var(--border)',borderRadius:14,padding:'12px 8px',textAlign:'center',boxShadow:'var(--shadow-sm)'}}>
+            <div style={{fontSize:10,fontWeight:800,color:'var(--muted)',textTransform:'uppercase',marginBottom:4}}>{l}</div><div className="mono" style={{fontSize:16,fontWeight:900}}>{v}</div>
+          </div>
+        ))}
+      </div>
+      {w>0&&<div className="card fi" style={{border:`2px solid ${cor}`,padding:'24px 20px',textAlign:'center',marginBottom:16,background:'var(--c-light)'}}>
+        <div style={{fontSize:11,fontWeight:800,color:cor,textTransform:'uppercase',letterSpacing:1,marginBottom:8}}>{lang.doseAlvo} (INTERVALO)</div>
+        <div className="mono" style={{fontSize:42,fontWeight:900,lineHeight:1}}>{f1(w*fMnC)} <span style={{fontSize:18,color:'var(--muted)'}}>~</span> {f1(w*fMxC)} <span style={{fontSize:18,color:'var(--muted)'}}>mCi</span></div>
+      </div>}
+      <button className="btn" onClick={()=>{
+        if(!nome||!w)return;
+        if(getRelMin(h, cfg.hCalib)<0){showToast(lang.injecaoMenorCalib.replace("{h}",h).replace("{c}",cfg.hCalib));return;}
+        vib(); onAdd({id:Date.now(),nome:nome.trim(),peso,hSim:h,fMin:String(fMnC),fMax:String(fMxC),doseReal:""});
+        setNome("");setPeso("");showToast(<>{ICONS.check} {lang.pacienteAdicionado}</>);
+      }} disabled={!nome||!w} style={{height:56,fontSize:18,marginTop:8, width:'100%'}}>{lang.confirmarSalvar}</button>
+    </div>
+  </div>;
+}
+
+/* --- MENU LATERAL (Configurações e Sobre) --- */
+function Menu({open,onClose,uiMode,setUiMode,cfg,setCfg,cor,setCor,dark,toggleDark,vibOn,setVibOn,lang,setLang}){
+  const [langOpen, setLangOpen] = useState(false);
+  const LANGS=[{id:"pt",flag:"🇧🇷",label:"Português"},{id:"en",flag:"🇺🇸",label:"English"},{id:"es",flag:"🇪🇸",label:"Español"}];
+  return <>
+    <div className={`dov${open?" on":""}`} onClick={onClose}/>
+    <div className={`drw${open?" on":""}`}>
+      <div className="drw-hdr"><span className="drw-title">{lang.configuracoes}</span><button className="drw-close" onClick={onClose}>{ICONS.close}</button></div>
+      <div className="drw-body">
+        
+        <div className="drw-row">
+          <span style={{fontWeight:600,fontSize:15,display:'flex',alignItems:'center',gap:10}}><span style={{color:'var(--muted)'}}>{ICONS.lista}</span> {lang.modoExibicao}</span>
+          <select className="inp" style={{width: 170, height: 38, padding: '0 10px', fontSize: 14}} value={uiMode} onChange={e=>{vib(); setUiMode(e.target.value);}}>
+            <option value="table">{lang.modoTabela}</option>
+            <option value="cards">{lang.modoCartoes}</option>
+          </select>
+        </div>
+
+        <div className="drw-row" style={{position:'relative', zIndex: 11}}>
+          <span style={{fontWeight:600,fontSize:15,display:'flex',alignItems:'center',gap:10}}><span style={{color:'var(--muted)'}}>{ICONS.lang}</span> {lang.idioma}</span>
+          <div>
+            <button onClick={()=>setLangOpen(!langOpen)} style={{width:38,height:38,borderRadius:'50%',background:'var(--surface)',border:'1px solid var(--border)',display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',color:'var(--text)',boxShadow:'var(--shadow-sm)'}}>{ICONS.lang}</button>
+            {langOpen && (
+              <div className="fi" style={{position:'absolute',top:46,right:0,background:'var(--surface)',border:'1px solid var(--border)',borderRadius:16,padding:8,display:'flex',flexDirection:'column',gap:6,boxShadow:'var(--shadow-md)',zIndex:12,minWidth:140}}>
+                {LANGS.map(l=>(
+                  <button key={l.id} onClick={()=>{vib();setLang(l.id);setLangOpen(false);}} style={{display:'flex',alignItems:'center',gap:10,padding:'10px 14px',borderRadius:10,background:lang._id===l.id?'var(--c-light)':'transparent',border:'none',color:lang._id===l.id?'var(--c)':'var(--text)',cursor:'pointer',fontWeight:700,fontSize:14,textAlign:'left'}}>
+                    <span>{l.flag}</span> <span>{l.label}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+        <div className="drw-sep"/>
+        <div>
+          <div style={{fontSize:11,fontWeight:800,letterSpacing:1.5,textTransform:'uppercase',color:'var(--muted)',marginBottom:12}}>{lang.aparencia}</div>
+          <div style={{display:'flex',flexDirection:'column',gap:10}}>
+            <div className="drw-row"><span style={{fontWeight:600,fontSize:15,display:'flex',alignItems:'center',gap:10}}><span style={{color:'var(--muted)'}}>{ICONS.moon}</span> {lang.modoEscuro}</span><Toggle ativo={dark} onChange={()=>{vib();toggleDark();}}/></div>
+            <div className="drw-row">
+              <span style={{fontWeight:600,fontSize:15,display:'flex',alignItems:'center',gap:10}}><span style={{color:'var(--muted)'}}>{ICONS.color}</span> {lang.corTema}</span>
+              <label style={{cursor:'pointer',display:'flex',alignItems:'center',gap:10}}>
+                <div style={{width:32,height:32,borderRadius:'50%',background:cor,border:'3px solid var(--surface)',boxShadow:'0 0 0 2px var(--border)'}}/>
+                <input type="color" value={cor} onChange={e=>{setCor(e.target.value);applyColor(e.target.value);}} style={{position:'absolute',opacity:0,width:0,height:0}}/>
+              </label>
+            </div>
+            <div className="drw-row"><span style={{fontWeight:600,fontSize:15,display:'flex',alignItems:'center',gap:10}}><span style={{color:'var(--muted)'}}>{ICONS.vibe}</span> {lang.vibracao}</span><Toggle ativo={vibOn} onChange={()=>{const v=!vibOn;setVibOn(v);_vib=v;}}/></div>
+          </div>
+        </div>
+        <div className="drw-sep"/>
+        <Fld label={lang.nomeInstituicao}><input className="inp" value={cfg.instituicao||""} onChange={e=>setCfg({...cfg,instituicao:e.target.value})} placeholder={lang.clinicaPlaceholder}/></Fld>
+        <div className="drw-sep"/>
+        <MenuSobre lang={lang} />
+      </div>
+    </div>
+  </>;
+}
+
+/* --- TELAS COMPARTILHADAS --- */
+function TelaCalc({cor,ativa,onFechar,lang}){
+  const[iso,setIso]=useState("Flúor-18 (¹⁸F)"); const[mv,setMv]=useState(109.77);
+  const[a0,setA0]=useState(""); const[t0,setT0]=useState(nowt()); const[t1,setT1]=useState(addMin(nowt(),60));
+  const t12=getT12(iso,mv);
+  const res=useMemo(()=>{const a=parseFloat(a0);if(!a)return null;let dt=getRelMin(t1,t0);if(dt<0)dt+=1440;return{af:decair(a,t12,dt),dt};},[a0,t0,t1,t12]);
+  return <div className={`screen fi${ativa?"":" hidden"}`} style={{zIndex:200}}>
+    <div className="hdr">
+      <button onClick={onFechar} className="ghost" style={{width:42,padding:0}}>{ICONS.close}</button>
+      <div style={{flex:1,textAlign:'center',fontSize:18,fontWeight:900, display:'flex', alignItems:'center', justifyContent:'center', gap:8}}><span style={{color:cor}}>{ICONS.calc}</span> {lang.calcDecaimento}</div>
+      <div style={{width:42}}/>
+    </div>
+    <div className="scroll">
+      <div className="card" style={{padding:20,border:'none'}}>
+        <div className="g2" style={{marginBottom:16}}>
+          <Fld label={lang.isotopo}><select className="inp" value={iso} onChange={e=>setIso(e.target.value)} style={{fontWeight:700}}>{Object.keys(FARMACOS).map(f=><option key={f}>{f}</option>)}</select></Fld>
+          <Fld label={lang.meiaVida}>{iso==="Outro"?<input className="inp" type="number" value={mv} onChange={e=>setMv(e.target.value)} step="0.01"/>:<div className="inp" style={{background:'var(--bg)',color:'var(--muted)',display:'flex',alignItems:'center',borderColor:'transparent'}}>{t12.toFixed(1)} min</div>}</Fld>
+        </div>
+        <Fld label={lang.atividadeInicial} style={{marginBottom:16}}><input className="inp mono" type="number" value={a0} onChange={e=>setA0(e.target.value)} placeholder="Ex: 10" step="0.1" style={{fontSize:20,fontWeight:800,height:56,borderColor:cor,background:'var(--surface)'}}/></Fld>
+        <div className="g2">
+          <Fld label={lang.horaInicial}><input className="inp mono" type="time" value={t0} onChange={e=>setT0(e.target.value)} style={{fontWeight:800,height:56}}/></Fld>
+          <Fld label={lang.horaAlvo}><input className="inp mono" type="time" value={t1} onChange={e=>setT1(e.target.value)} style={{fontWeight:800,height:56}}/></Fld>
+        </div>
+      </div>
+      {res&&<div className="card fi" style={{border:'none',background:`var(--c-light)`,boxShadow:`0 0 0 1px var(--c)`}}>
+        <div style={{padding:'32px 20px',textAlign:'center'}}>
+          <div style={{fontSize:11,color:cor,fontWeight:800,textTransform:'uppercase',letterSpacing:1.5,marginBottom:8}}>{lang.resultado}</div>
+          <div className="mono" style={{fontSize:56,fontWeight:900,color:'var(--text)',lineHeight:1}}>{res.af.toFixed(2)} <span style={{fontSize:22,color:'var(--muted)'}}>mCi</span></div>
+          <div style={{fontSize:14,color:'var(--text-soft)',marginTop:12,fontWeight:600}}>{lang.decorrido}: {res.dt} min • {lang.fator}: {Math.pow(2,-res.dt/t12).toFixed(4)}</div>
+          <div style={{fontSize:16,fontWeight:800,color:'var(--muted)',marginTop:8}}>≈ {mbq(res.af)} MBq</div>
+        </div>
+      </div>}
+    </div>
+  </div>;
+}
+
+function PrintPDF({cfg,lista,totReal,restante,efic,cor,lang}){
+  const acN=parseFloat(cfg.aCalib)||0; const vcN=parseFloat(cfg.vCalib)||0;
+  const t12=getT12(cfg.farmaco,cfg.mvCustom); const perda=parseFloat(cfg.perda)||4;
+  const uptake=parseInt(cfg.uptake)||60; const exame=parseInt(cfg.intervalo)||25; const tolerancia=uptake+exame;
+  const concI=(acN>0&&vcN>0)?acN/vcN:0;
+  const fMnG=parseFloat(cfg.fMin)||0.08; const fMxG=parseFloat(cfg.fMax)||0.12;
+  const calibMin2=toMin(cfg.hCalib||"09:00"); const agora=toMin(nowt());
+  const aAtAgora=acN*Math.pow(0.5,(agora-calibMin2)/t12)*(1-perda/100);
+  const volTotal=lista.reduce((s,p)=>{
+    const d=p.doseAplicar||0; const dtI=getRelMin(p.hSim, cfg.hCalib);
+    const aAt=acN*Math.pow(0.5,dtI/t12)*(1-perda/100); const cAt=(vcN>0)?aAt/vcN:0;
+    return s+(cAt>0?d/cAt:0);
+  },0);
+
+  const TD={borderBottom:"1px solid #e2e8f0",padding:"5px 7px",textAlign:"left",fontSize:9};
+  const TH={...TD,background:"#f8fafc",color:"#64748b",fontWeight:800,textTransform:"uppercase",fontSize:8,textAlign:"center"};
+  const TDc={...TD,textAlign:"center"};
+
+  return <div style={{fontFamily:"Arial,sans-serif",color:"#0f172a",background:"#fff",width:"100%"}}>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",borderBottom:`3px solid ${cor}`,paddingBottom:9,marginBottom:12}}>
+      <div style={{display:"flex",alignItems:"center",gap:8}}>
+        <div style={{width:30,height:30,borderRadius:7,background:cor,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><svg viewBox="0 0 24 24" width="18" height="18" fill="white"><path d="M12 2a10 10 0 1 0 0 20A10 10 0 0 0 12 2zm0 3a2 2 0 1 1 0 4 2 2 0 0 1 0-4zm-4.5 7.5a4.5 4.5 0 0 1 3-4.24V10h3v-1.74a4.5 4.5 0 0 1 3 4.24H14a2 2 0 0 0-4 0H7.5z"/></svg></div>
+        <div><div style={{fontSize:13,fontWeight:900,letterSpacing:"-0.5px"}}>PET-CT Dose</div>{cfg.instituicao&&<div style={{fontSize:8.5,color:cor,fontWeight:700}}>{cfg.instituicao}</div>}<div style={{fontSize:8,color:"#64748b"}}>{dataHoje()}</div></div>
+      </div>
+      <div style={{fontSize:8,textAlign:"right",lineHeight:1.8,color:"#334155"}}>
+        <div><b>{cfg.farmaco}</b> · {lang.pdfMeiaVida}: {t12} min · {lang.pdfPerdaRF}: {perda}%</div>
+        <div>{lang.pdfCalibracao}: {cfg.hCalib} · {f1(acN)} mCi{vcN>0?` · ${vcN} mL`:""} {cfg.lote?`· ${lang.pdfLote}: ${cfg.lote}`:""}</div>
+      </div>
+    </div>
+    <table style={{width:"100%",borderCollapse:"collapse",border:"1px solid #e2e8f0",marginBottom:12}}>
+      <thead><tr>{["#",lang.pdfPaciente,lang.pdfPeso,lang.pdfEntradaSala,lang.pdfDoseInjetada,lang.pdfVolume,lang.pdfDoseMin,lang.pdfDoseMax].map(h=><th key={h} style={TH}>{h}</th>)}</tr></thead>
+      <tbody>
+        {!lista.length?<tr><td colSpan="8" style={{...TDc,padding:20,color:"#94a3b8"}}>{lang.pdfSemRegistros}</td></tr>
+        :lista.map((p,i)=>{
+          const d=p.doseAplicar||0; const fmn=parseFloat(p.fMin)||fMnG; const fmx=parseFloat(p.fMax)||fMxG; const w=parseFloat(p.peso)||0;
+          const dtI=getRelMin(p.hSim, cfg.hCalib); const aAt=acN*Math.pow(0.5,dtI/t12)*(1-perda/100); const cAt=(vcN>0)?aAt/vcN:0;
+          const vol=cAt>0?d/cAt:0; const entrada=addMin(p.hSim,uptake); const doseOk=d>=(p.dPmin||w*fmn)-0.05;
+          return <tr key={p.id} style={{background:i%2?"#f8fafc":"#fff"}}>
+            <td style={{...TDc,fontWeight:800,color:"#64748b"}}>{i+1}</td><td style={{...TD,fontWeight:800}}>{p.nome}</td><td style={TDc}>{p.peso} kg</td>
+            <td style={{...TDc,fontWeight:800,color:cor}}>{entrada}</td><td style={{...TDc,fontWeight:900,color:doseOk?"#059669":"#dc2626"}}>{f1(d)} mCi</td>
+            <td style={{...TDc,color:"#0ea5e9",fontWeight:700}}>{vol>0?vol.toFixed(2)+" mL":"—"}</td>
+            <td style={{...TDc,color:"#64748b"}}>{f1(p.dPmin||w*fmn)}</td><td style={{...TDc,color:"#64748b"}}>{f1(p.dPmax||w*fmx)}</td>
+          </tr>;
+        })}
+      </tbody>
+    </table>
+    <div style={{display:"flex",gap:10}}>
+      <div style={{flex:1,border:"1px solid #e2e8f0",borderRadius:7,padding:"8px 10px"}}>
+        <div style={{fontSize:8,fontWeight:800,textTransform:"uppercase",color:"#64748b",marginBottom:6,borderBottom:"1px solid #e2e8f0",paddingBottom:3}}>{lang.pdfResumo}</div>
+        {[[lang.pacientes,lista.length],[lang.pdfDoseTotal,`${f1(totReal)} mCi`], [lang.pdfMbq,(totReal*37).toFixed(0)],[lang.pdfVolTotal,`${volTotal.toFixed(2)} mL`],[lang.pdfVolRestante,`${(vcN-volTotal).toFixed(2)} mL`],[lang.pdfAtivAgora,`${f1(aAtAgora)} mCi`]].map(([l,v])=>( <div key={l} style={{display:"flex",justifyContent:"space-between",fontSize:8.5,marginBottom:2.5}}><span style={{color:"#64748b"}}>{l}:</span><span style={{fontWeight:700}}>{v}</span></div> ))}
+      </div>
+      <div style={{flex:1,border:"1px solid #e2e8f0",borderRadius:7,padding:"8px 10px"}}>
+        <div style={{fontSize:8,fontWeight:800,textTransform:"uppercase",color:"#64748b",marginBottom:6,borderBottom:"1px solid #e2e8f0",paddingBottom:3}}>{lang.pdfLote}</div>
+        {[[lang.pdfAtividade,`${f1(acN)} mCi`],[lang.pdfVolume2,vcN>0?`${vcN} mL`:"—"],[lang.pdfLote,cfg.lote||"—"],[lang.pdfCaptacao,`${uptake} min`],[lang.pdfExame,`${exame} min`],[lang.pdfTolerancia,`${tolerancia} min`]].map(([l,v])=>( <div key={l} style={{display:"flex",justifyContent:"space-between",fontSize:8.5,marginBottom:2.5}}><span style={{color:"#64748b"}}>{l}:</span><span style={{fontWeight:700}}>{v}</span></div> ))}
+      </div>
+    </div>
+  </div>;
+}
+
+function TelaDash({cfg,lista,cor,onFechar,lang}){
+  const t12=getT12(cfg.farmaco,cfg.mvCustom);
+  const perda=parseFloat(cfg.perda)||4; const acN=parseFloat(cfg.aCalib)||0;
+  const {lista:lc,atvFinal}=useMemo(()=>recalc(lista,cfg.aCalib,cfg.vCalib,cfg.hCalib,t12,perda,parseFloat(cfg.fMin)||0.08,parseFloat(cfg.fMax)||0.12),[lista,cfg,t12,perda]);
+  const totReal=lc.reduce((s,p)=>s+p.doseAplicar,0);
+  const restante=Math.max(atvFinal,0);
+  const efic=acN>0?((totReal/acN)*100).toFixed(1):0;
+  const pctR=acN>0?Math.min((totReal/acN)*100,100):0; const pctRst=acN>0?Math.min((restante/acN)*100,100):100;
+  const pSorted=[...lc].sort((a,b)=>getRelMin(a.hSim, cfg.hCalib)-getRelMin(b.hSim, cfg.hCalib));
+  const [ger,setGer]=useState(false);
+
+  async function exportPDF(){
+    setGer(true);vib();
+    const el=document.getElementById("pra-container");
+    el.style.cssText="display:block!important;position:fixed;left:-9999px;top:0;width:794px;background:#fff;padding:20px;font-family:Arial;z-index:-10";
+    try{
+      const cv=await html2canvas(el,{scale:2,useCORS:true,backgroundColor:"#ffffff"});
+      const{jsPDF}=window.jspdf;
+      const pdf=new jsPDF({orientation:"portrait",unit:"mm",format:"a4"});
+      const pw=pdf.internal.pageSize.getWidth(),ph=pdf.internal.pageSize.getHeight(),mg=8;
+      const iw=pw-mg*2,ih=(cv.height*iw)/cv.width;
+      if(ih<=ph-mg*2){pdf.addImage(cv.toDataURL("image/jpeg",1.0),"JPEG",mg,mg,iw,ih);}
+      else{let r=ih,sy=0;while(r>0){const sh=Math.min(r,ph-mg*2),sc=document.createElement("canvas");sc.width=cv.width;sc.height=sh*(cv.width/iw);sc.getContext("2d").drawImage(cv,0,sy*(cv.width/iw),cv.width,sh*(cv.width/iw),0,0,cv.width,sh*(cv.width/iw));if(sy>0)pdf.addPage();pdf.addImage(sc.toDataURL("image/jpeg",1.0),"JPEG",mg,mg,iw,sh);sy+=sh;r-=sh;}}
+      pdf.save(`PETCT_Dash_${new Date().toLocaleDateString("pt-BR").replace(/\//g,"-")}.pdf`);
+    }catch(e){alert("Erro ao gerar PDF.");}
+    finally{el.style.cssText="display:none";setGer(false);}
+  }
+
+  return <div className="screen fi" style={{zIndex:200}}>
+    <div className="hdr">
+      <button onClick={onFechar} className="ghost" style={{width:42,padding:0}}>{ICONS.close}</button>
+      <div style={{fontWeight:900,fontSize:18}}>{lang.dashboard}</div>
+      <button onClick={exportPDF} disabled={ger} className="btn" style={{height:42,width:'auto',padding:'0 16px',borderRadius:12,fontSize:14}}> {ger ? "⏳" : <>{ICONS.pdf} PDF</>} </button>
+    </div>
+    <div className="scroll" style={{paddingTop:24}}>
+      <div className="d-kpi" style={{marginBottom:20}}>
+        <div className="d-kpi-card" style={{border:'none'}}><div className="d-kpi-lbl">{lang.pacientes}</div><div className="d-kpi-val">{lc.length}</div></div>
+        <div className="d-kpi-card" style={{border:'none'}}><div className="d-kpi-lbl">{lang.calibrado}</div><div className="d-kpi-val">{f1(acN)} <span style={{fontSize:14,color:'var(--muted)',fontWeight:700}}>mCi</span></div></div>
+        <div className="d-kpi-card" style={{border:'none',background:'color-mix(in srgb,var(--warning) 12%,var(--surface))'}}><div className="d-kpi-lbl" style={{color:'var(--warning)'}}>{lang.administrado}</div><div className="d-kpi-val" style={{color:'var(--warning)'}}>{f1(totReal)} <span style={{fontSize:14,fontWeight:700}}>mCi</span></div></div>
+        <div className="d-kpi-card" style={{border:'none',background:'color-mix(in srgb,var(--success) 12%,var(--surface))'}}><div className="d-kpi-lbl" style={{color:'var(--success)'}}>{lang.restante}</div><div className="d-kpi-val" style={{color:'var(--success)'}}>{f1(restante)} <span style={{fontSize:14,fontWeight:700}}>mCi</span></div></div>
+      </div>
+      <div className="card" style={{border:'none',padding:24,marginBottom:16}}>
+        <div style={{fontSize:12,fontWeight:800,color:'var(--muted)',textTransform:'uppercase',letterSpacing:1.5,marginBottom:24,textAlign:'center'}}>{lang.usoFrasco}</div>
+        <div style={{display:'flex',alignItems:'center',justifyContent:'center',gap:32,flexWrap:'wrap'}}>
+          <div style={{width:130,height:130,position:'relative'}}>
+            <svg viewBox="0 0 36 36" style={{width:'100%',height:'100%',transform:'rotate(-90deg)'}}>
+              <path fill="none" stroke="var(--alt)" strokeWidth="6" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"/>
+              {acN>0&&<>
+                <path fill="none" stroke="var(--warning)" strokeWidth="6" strokeDasharray={`${pctR} 100`} d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" strokeLinecap="round"/>
+                <path fill="none" stroke="var(--success)" strokeWidth="6" strokeDasharray={`${pctRst} 100`} strokeDashoffset={`-${pctR}`} d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" strokeLinecap="round"/>
+              </>}
+            </svg>
+            <div style={{position:'absolute',inset:0,display:'flex',alignItems:'center',justifyContent:'center',flexDirection:'column'}}><span style={{fontSize:10,color:'var(--muted)',fontWeight:800,letterSpacing:0.5}}>{lang.eficiencia}</span><span className="mono" style={{fontSize:24,fontWeight:900}}>{efic}%</span></div>
+          </div>
+          <div style={{display:'flex',flexDirection:'column',gap:12}}>
+            <div style={{display:'flex',alignItems:'center',gap:10}}><div style={{width:16,height:16,borderRadius:4,background:'var(--warning)'}}></div><span style={{fontSize:14,fontWeight:600}}>{lang.administrado} ({pctR.toFixed(1)}%)</span></div>
+            <div style={{display:'flex',alignItems:'center',gap:10}}><div style={{width:16,height:16,borderRadius:4,background:'var(--success)'}}></div><span style={{fontSize:14,fontWeight:600}}>{lang.restante} ({pctRst.toFixed(1)}%)</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div id="pra-container"><PrintPDF cfg={cfg} lista={pSorted} totReal={totReal} restante={restante} efic={efic} cor={cor} lang={lang}/></div>
+  </div>;
+}
+
+/* --- DICIONÁRIO DE IDIOMAS COMPLETO --- */
+const LANGS_DICT={
+  pt:{_id:"pt",
+    configuracoes:"Configurações",idioma:"Idioma",aparencia:"Aparência",modoEscuro:"Modo Escuro",corTema:"Cor do Tema",vibracao:"Vibração",
+    modoExibicao: "Modo de Exibição", modoTabela: "Tabela Dinâmica", modoCartoes: "Cartões",
+    nomeInstituicao:"Nome da Instituição",clinicaPlaceholder:"Clínica Nuclear…",
+    parametros:"Parâmetros",janelaDose:"Janela de Dose",doseMin:"Mínimo",doseMax:"Máximo",
+    captacao:"Captação (min)",gapInjecao:"Gap Injeção (min)",sobre:"Sobre",
+    loteTab:"Lote",operacaoTab:"Operação",calcTab:"Calculadora",
+    radiofarmacoLote:"Radiofármaco e Lote",isotopo:"Isótopo",meiaVida:"Meia-vida",meiaVidaMin:"Meia-vida (min)",
+    perdaSeringa:"Perda Seringa (%)",idLote:"ID Lote",opcional:"Opcional",
+    calibracaoFrasco:"Calibração do Frasco",horario:"Horário",atividadeMci:"Atividade (mCi)",volumeMl:"Volume (mL)",
+    atividadeCalibrada:"Atividade Calibrada",concentracao:"Concentração",
+    apagarOperacao:"Apagar Operação Completa",confirmarApagar:"Zerar toda a operação?",
+    disponivel:"Disponível",dadosFrascoIncompletos:"Dados incompletos. Cálculos de dose podem estar incorretos.",
+    irParaLote:"Ir para Lote",autoDistribuir:"Auto-Distribuir",nenhumAgendamento:"Nenhum agendamento",toqueMais:"Toque para adicionar.",
+    autoDistToast:"Auto-Distribuição: {k} pacientes",pacienteRemovido:"Paciente removido",
+    horarioInjecao:"Horário de Injeção",doseAplicada:"Dose Aplicada",atividadeLimitada:"atividade limitada",
+    atividadeAtual:"Atividade Atual",volumeAspirado:"Volume aspirado",
+    novoAgendamento:"Novo Agendamento",cancelar:"Cancelar",nomePaciente:"Nome do Paciente",nomeCompleto:"Nome completo",
+    pesoKg:"Peso (kg)",horaInjecao:"Hora de Injeção",injecao:"Injeção",sala:"Sala",termino:"Término",
+    doseAlvo:"Dose Alvo",minima:"Mínima",maxima:"Máxima",confirmarSalvar:"Confirmar e Salvar",
+    injecaoMenorCalib:"Injeção ({h}) < Calibração ({c})",pacienteAdicionado:"Paciente adicionado!",
+    editarPaciente:"Editar Paciente",voltar:"← Voltar",dadosPaciente:"Dados",excluirPaciente:"Excluir Paciente",confirmarExclusao:"Excluir {nome}?",
+    excluir:"Excluir",dashboard:"Dashboard",usoFrasco:"Uso do Frasco",eficiencia:"EFICIÊNCIA",
+    administrado:"Administrado",restante:"Restante",calibrado:"Calibrated",pacientes:"Pacientes",
+    calcDecaimento:"Calculadora",atividadeInicial:"Atividade Inicial (mCi)",horaInicial:"Hora Inicial",horaAlvo:"Hora Alvo",resultado:"Resultado",decorrido:"Decorrido",fator:"Fator",
+    pdfEntradaSala:"Entrada",pdfDoseInjetada:"Injetada",pdfVolume:"Volume",pdfFator:"Fator",pdfDoseMin:"Dose Mín",pdfDoseMax:"Dose Máx",
+    pdfPaciente:"Paciente",pdfPeso:"Peso",pdfResumo:"Resumo",pdfLote:"Lote",pdfAssinatura:"Assinatura",pdfResponsavel:"Responsável",pdfSemRegistros:"Sem registros.",
+    pdfDoseTotal:"Dose total",pdfMbq:"MBq",pdfVolTotal:"Vol. total",pdfVolRestante:"Vol. restante",
+    pdfAtivAgora:"Ativ. agora",pdfAtividade:"Atividade",pdfVolume2:"Volume",pdfCaptacao:"Captação",pdfExame:"Exame",pdfTolerancia:"Tolerância",pdfMeiaVida:"Meia-vida",pdfPerdaRF:"Perda RF",pdfCalibracao:"Calibração",pdfConcInicial:"Conc. inicial",
+    navLote:"Lote",navOperacao:"Operação",navCalc:"Calculadora"
+  },
+  en:{_id:"en",
+    configuracoes:"Settings",idioma:"Language",aparencia:"Appearance",modoEscuro:"Dark Mode",corTema:"Theme Color",vibracao:"Vibration",
+    modoExibicao: "View Mode", modoTabela: "Data Table", modoCartoes: "Cards",
+    nomeInstituicao:"Institution",clinicaPlaceholder:"Clinic...",
+    parametros:"Parameters",janelaDose:"Dose Window",doseMin:"Minimum",doseMax:"Maximum",
+    captacao:"Uptake (min)",gapInjecao:"Injection Gap (min)",sobre:"About",
+    loteTab:"Batch",operacaoTab:"Operation",calcTab:"Calculator",
+    radiofarmacoLote:"Batch Calibration",isotopo:"Isotope",meiaVida:"Half-life",meiaVidaMin:"Half-life (min)",
+    perdaSeringa:"Loss (%)",idLote:"Batch ID",opcional:"Optional",
+    calibracaoFrasco:"Vial Calibration",horario:"Time",atividadeMci:"Activity (mCi)",volumeMl:"Volume (mL)",
+    atividadeCalibrada:"Calibrated Activity",concentracao:"Concentration",
+    apagarOperacao:"Clear Operation",confirmarApagar:"Reset entire operation?",
+    disponivel:"Available",dadosFrascoIncompletos:"Vial data incomplete.",
+    irParaLote:"Go to Batch",autoDistribuir:"Auto-Distribute",nenhumAgendamento:"No appointments",toqueMais:"Tap to add.",
+    autoDistToast:"Auto-Distribution: {k} patients",pacienteRemovido:"Patient removed",
+    horarioInjecao:"Injection Time",doseAplicada:"Administered Dose",atividadeLimitada:"limited activity",
+    atividadeAtual:"Current Activity",volumeAspirado:"Aspirated volume",
+    novoAgendamento:"New Appointment",cancelar:"Cancel",nomePaciente:"NAME",nomeCompleto:"Full name",
+    pesoKg:"WEIGHT",horaInjecao:"Injection Time",injecao:"Injection",sala:"Room",termino:"End",
+    doseAlvo:"Target Dose",minima:"Minimum",maxima:"Maximum",confirmarSalvar:"Confirm & Save",
+    injecaoMenorCalib:"Injection ({h}) < Calibration ({c})",pacienteAdicionado:"Patient added!",
+    editarPaciente:"Edit Patient",voltar:"← Back",dadosPaciente:"Data",excluirPaciente:"Delete Patient",confirmarExclusao:"Delete {nome}?",
+    excluir:"Delete",dashboard:"Dashboard",usoFrasco:"Usage",eficiencia:"EFFIC.",
+    administrado:"Administered",restante:"Remaining",calibrado:"Calibrated",pacientes:"Patients",
+    calcDecaimento:"Calculator",atividadeInicial:"Init. Act. (mCi)",horaInicial:"Start Time",horaAlvo:"Target Time",resultado:"Result",decorrido:"Elapsed",fator:"Factor",
+    pdfEntradaSala:"Entry",pdfDoseInjetada:"Injected",pdfVolume:"Volume",pdfFator:"Factor",pdfDoseMin:"Min Dose",pdfDoseMax:"Max Dose",
+    pdfPaciente:"Patient",pdfPeso:"Weight",pdfResumo:"Summary",pdfLote:"Batch",pdfAssinatura:"Signature",pdfResponsavel:"Supervisor",pdfSemRegistros:"No records.",
+    pdfDoseTotal:"Total dose",pdfMbq:"MBq",pdfVolTotal:"Total vol.",pdfVolRestante:"Remaining vol.",
+    pdfAtivAgora:"Act. now",pdfAtividade:"Activity",pdfVolume2:"Volume",pdfCaptacao:"Uptake",pdfExame:"Exam",pdfTolerancia:"Tolerance",pdfMeiaVida:"Half-life",pdfPerdaRF:"RF Loss",pdfCalibracao:"Calibration",pdfConcInicial:"Initial conc.",
+    navLote:"Batch",navOperacao:"Operation",navCalc:"Calculator"
+  },
+  es:{_id:"es",
+    configuracoes:"Configuración",idioma:"Idioma",aparencia:"Apariencia",modoEscuro:"Modo Oscuro",corTema:"Color Tema",vibracao:"Vibración",
+    modoExibicao: "Modo de Vista", modoTabela: "Tabla", modoCartoes: "Tarjetas",
+    nomeInstituicao:"Institución",clinicaPlaceholder:"Clínica...",
+    parametros:"Parámetros",janelaDose:"Ventana de Dosis",doseMin:"Mínimo",doseMax:"Máximo",
+    captacao:"Captación (min)",gapInjecao:"Gap Inyección (min)",sobre:"Acerca de",
+    loteTab:"Lote",operacaoTab:"Operación",calcTab:"Calculadora",
+    radiofarmacoLote:"Calibración Lote",isotopo:"Isótopo",meiaVida:"Semivida",meiaVidaMin:"Semivida (min)",
+    perdaSeringa:"Pérdida (%)",idLote:"ID Lote",opcional:"Opcional",
+    calibracaoFrasco:"Calibración Vial",horario:"Horario",atividadeMci:"Actividad (mCi)",volumeMl:"Volumen (mL)",
+    atividadeCalibrada:"Actividad Calibrada",concentracao:"Concentración",
+    apagarOperacao:"Borrar Operación",confirmarApagar:"¿Resetear toda la operación?",
+    disponivel:"Disponible",dadosFrascoIncompletos:"Datos del vial incompletos.",
+    irParaLote:"Ir al Lote",autoDistribuir:"Auto-Distribuir",nenhumAgendamento:"Sin pacientes",toqueMais:"Toca para agregar.",
+    autoDistToast:"Auto-Distribución: {k} pacientes",pacienteRemovido:"Paciente eliminado",
+    horarioInjecao:"Horario Inyección",doseAplicada:"Dosis Administrada",atividadeLimitada:"actividad limitada",
+    atividadeAtual:"Actividad Actual",volumeAspirado:"Volumen aspirado",
+    novoAgendamento:"Nuevo Agendamiento",cancelar:"Cancelar",nomePaciente:"NOMBRE",nomeCompleto:"Nombre completo",
+    pesoKg:"PESO",horaInjecao:"Hora Inyección",injecao:"Inyección",sala:"Sala",termino:"Fin",
+    doseAlvo:"Dosis Objetivo",minima:"Mínima",maxima:"Máxima",confirmarSalvar:"Confirmar y Guardar",
+    injecaoMenorCalib:"Inyección ({h}) < Calibración ({c})",pacienteAdicionado:"¡Paciente agregado!",
+    editarPaciente:"Editar",voltar:"← Volver",dadosPaciente:"Datos",excluirPaciente:"Eliminar",confirmarExclusao:"¿Eliminar {nome}?",
+    excluir:"Eliminar",dashboard:"Dashboard",usoFrasco:"Uso",eficiencia:"EFIC.",
+    administrado:"Administrado",restante:"Restante",calibrado:"Calibrado",pacientes:"Pacientes",
+    calcDecaimento:"Calculadora",atividadeInicial:"Activ. Inicial (mCi)",horaInicial:"Hora Inicial",horaAlvo:"Hora Objetivo",resultado:"Resultado",decorrido:"Transcurrido",fator:"Factor",
+    pdfEntradaSala:"Entrada",pdfDoseInjetada:"Inyectada",pdfVolume:"Volumen",pdfFator:"Factor",pdfDoseMin:"Dosis Mín",pdfDoseMax:"Dosis Máx",
+    pdfPaciente:"Paciente",pdfPeso:"Peso",pdfResumo:"Resumen",pdfLote:"Lote",pdfAssinatura:"Firma",pdfResponsavel:"Responsable",pdfSemRegistros:"Sin registros.",
+    pdfDoseTotal:"Dosis total",pdfMbq:"MBq",pdfVolTotal:"Vol. total",pdfVolRestante:"Vol. restante",
+    pdfAtivAgora:"Act. ahora",pdfAtividade:"Actividad",pdfVolume2:"Volumen",pdfCaptacao:"Captación",pdfExame:"Examen",pdfTolerancia:"Tolerancia",pdfMeiaVida:"Semivida",pdfPerdaRF:"Pérd. RF",pdfCalibracao:"Calibración",pdfConcInicial:"Conc. inicial",
+    navLote:"Lote",navOperacao:"Operación",navCalc:"Calculadora"
+  }
+};
+
+/* --- APP CENTRAL COM ROTEAMENTO DE LAYOUT --- */
+function App(){
+  const[uiMode,setUiMode]=useState(()=>localStorage.getItem("petct-ui-mode")||"table");
+  const[tab,setTab]=useState(uiMode==="table"?"main":"lote");
+  const[novo,setNovo]=useState(false);
+  
+  const[menu,setMenu]=useState(false);
+  const[cor,setCor]=useState(()=>localStorage.getItem("petct-cor")||"#0A84FF");
+  const[dark,setDark]=useState(()=>localStorage.getItem("petct-dark")==="true");
+  const[vibOn,setVibOn]=useState(()=>localStorage.getItem("petct-vib")!=="false");
+  const[toast,setToast]=useState(null);
+  const[langId,setLangId]=useState(()=>localStorage.getItem("petct-lang")||"pt");
+  const lang=LANGS_DICT[langId]||LANGS_DICT.pt;
+  const tRef=useRef(null);
+  
+  const showToast=m=>{setToast(m);clearTimeout(tRef.current);tRef.current=setTimeout(()=>setToast(null),2800);};
+  
+  const[cfg,setCfg]=useState(()=>{
+    try{ let parsed=JSON.parse(localStorage.getItem("petct-cfg")||"{}"); return{...CFG0,...parsed}; }
+    catch(e){return CFG0;}
+  });
+  
+  const[lista,setLista]=useState(()=>{
+    try{ return JSON.parse(localStorage.getItem("petct-lista")||"[]"); }
+    catch(e){return[];}
+  });
+
+  useEffect(()=>{localStorage.setItem("petct-cfg",JSON.stringify(cfg));},[cfg]);
+  useEffect(()=>{localStorage.setItem("petct-lista",JSON.stringify(lista));},[lista]);
+  useEffect(()=>{document.body.classList.toggle("dark",dark);localStorage.setItem("petct-dark",dark);},[dark]);
+  useEffect(()=>{localStorage.setItem("petct-cor",cor);applyColor(cor);},[cor]);
+  useEffect(()=>{localStorage.setItem("petct-vib",vibOn);_vib=vibOn;},[vibOn]);
+  useEffect(()=>{localStorage.setItem("petct-lang",langId);},[langId]);
+  
+  const prevHCalib = useRef(cfg.hCalib);
+  useEffect(() => {
+    if (cfg.hCalib && prevHCalib.current !== cfg.hCalib) {
+      setLista(prevLista => {
+        if (prevLista.length === 0) return prevLista;
+        
+        let sorted = [...prevLista].sort((a, b) => getRelMin(a.hSim, prevHCalib.current) - getRelMin(b.hSim, prevHCalib.current));
+        let currentTime = addMin(cfg.hCalib, 15);
+        const gap = Number(cfg.intervalo) || 25;
+        let modificou = false;
+
+        const novaLista = sorted.map(p => {
+          if (!isNaN(parseFloat(p.doseReal)) && parseFloat(p.doseReal) > 0) {
+            return p;
+          }
+          modificou = true;
+          let novoHorario = currentTime;
+          currentTime = addMin(currentTime, gap);
+          return { ...p, hSim: novoHorario };
+        });
+
+        return modificou ? novaLista : prevLista;
+      });
+      prevHCalib.current = cfg.hCalib;
+    }
+  }, [cfg.hCalib, cfg.intervalo]);
+
+  useEffect(()=>{
+    localStorage.setItem("petct-ui-mode",uiMode);
+    if(uiMode==="table") setTab("main");
+    else if(tab==="main") setTab("lote");
+  },[uiMode]);
+
+  const NAV=[{id:"lote",label:lang.navLote,icon:ICONS.lote},{id:"lista",label:lang.navOperacao,icon:ICONS.lista,badge:lista.length||null},{id:"calc",label:lang.navCalc,icon:ICONS.calc}];
+
+  return <>
+    <div className={`toast${toast?" on":""}`}>{toast}</div>
+    <Menu open={menu} onClose={()=>setMenu(false)} uiMode={uiMode} setUiMode={setUiMode} cfg={cfg} setCfg={setCfg} cor={cor} setCor={setCor} dark={dark} toggleDark={()=>setDark(!dark)} vibOn={vibOn} setVibOn={setVibOn} lang={lang} setLang={setLangId}/>
+    
+    {uiMode === "table" ? (
+      <TelaPrincipal cfg={cfg} setCfg={setCfg} lista={lista} setLista={setLista} cor={cor} onDash={()=>setTab("dash")} onCalc={()=>setTab("calc")} setMenuOpen={setMenu} showToast={showToast} lang={lang}/>
+    ) : (
+      <>
+        <TelaLote cfg={cfg} setCfg={setCfg} cor={cor} ativa={tab==="lote"&&!novo} onLimpar={()=>{setLista([]);setCfg(p=>({...p,aCalib:"",vCalib:"",hCalib:"09:00",lote:""}));setTab("lote");}} setMenuOpen={setMenu} showToast={showToast} lang={lang}/>
+        <TelaLista cfg={cfg} setCfg={setCfg} lista={lista} setLista={setLista} cor={cor} onNovo={()=>setNovo(true)} onDash={()=>setTab("dash")} ativa={tab==="lista"&&!novo} showToast={showToast} onIrLote={()=>setTab("lote")} lang={lang}/>
+        <TelaNovo cfg={cfg} lista={lista} onAdd={p=>{setLista(v=>[...v,p]);setNovo(false);setTab("lista");}} onBack={()=>setNovo(false)} cor={cor} ativa={novo} showToast={showToast} lang={lang}/>
+        {!novo&&tab!=="dash"&&tab!=="calc"&&<nav className="nav">
+          {NAV.map(({id,label,icon,badge})=>(
+            <button key={id} className={`nav-btn${tab===id?" on":""}`} onClick={()=>{vib();setTab(id);}}>
+              {badge!=null&&<span className="nav-badge">{badge}</span>}
+              <span className="nav-icon">{icon}</span>
+              <span>{label}</span>
+            </button>
+          ))}
+        </nav>}
+      </>
+    )}
+
+    {tab==="calc" && <TelaCalc cor={cor} ativa={true} onFechar={()=>setTab(uiMode==="table"?"main":"lista")} lang={lang}/>}
+    {tab==="dash" && <TelaDash cfg={cfg} lista={lista} cor={cor} onFechar={()=>setTab(uiMode==="table"?"main":"lista")} lang={lang}/>}
+  </>;
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<ErrorBoundary><App/></ErrorBoundary>);
+</script>
+</body>
+</html>
