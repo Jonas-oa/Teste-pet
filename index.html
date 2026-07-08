@@ -267,8 +267,10 @@ const getRelMin=(time,ref)=>{
   let mTime=typeof time==='string'?toMin(time):time;
   let mRef=typeof ref==='string'?toMin(ref):ref;
   let m=mTime-mRef;
-  if(m<-720)m+=1440;
-  if(m>720)m-=1440;
+  // Só envolve na virada de meia-noite (valor fortemente negativo).
+  // Eventos posteriores à referência em até 23h permanecem positivos,
+  // evitando o wrap incorreto em plantões longos (>12h).
+  if(m<-180)m+=1440;
   return m;
 };
 
@@ -304,12 +306,14 @@ function recalc(lista, ac, vc, hC, t12, perda, fMinG, fMaxG) {
   
   for (let p of pendentes) {
     let reqMinPool = (p.dPmin / fatorPerda) / p.dec;
-    if (tempPool >= reqMinPool) {
+    // Paciente sem dose mínima válida (peso vazio/zero) não pode ser
+    // tratado como atendível por padrão: exige dPmin > 0.
+    if (p.dPmin > 0 && tempPool >= reqMinPool) {
       sobreviventes.push(p);
       tempPool -= reqMinPool; 
     } else {
       p.guilhotina = true;
-      p.doseRealExistente = (tempPool * p.dec) * fatorPerda;
+      p.doseRealExistente = (Math.max(tempPool, 0) * p.dec) * fatorPerda;
       tempPool = 0; 
     }
   }
