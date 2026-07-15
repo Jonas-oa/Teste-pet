@@ -225,6 +225,13 @@ function applyColor(c){
 }
 const {useState,useEffect,useMemo,useRef}=React;
 
+/* Versão do app. APP_BUILD é carimbado por ferramentas/marcar-versao.js — rode
+   ANTES de cada commit. Serve para você enxergar na tela qual build está
+   rodando: service worker cache-first já entregou versão de duas semanas atrás
+   como se fosse a atual, escondendo correções de cálculo. */
+const APP_VERSION="3.1";
+const APP_BUILD="2026-07-15T19:42Z";
+
 const ICONS = {
   lote: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M9 3H5a2 2 0 00-2 2v4m6-6h10a2 2 0 012 2v4M9 3v18m0 0h10a2 2 0 002-2V9M9 21H5a2 2 0 01-2-2V9m0 0h18"/></svg>,
   lista: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg>,
@@ -542,6 +549,48 @@ const horariosDuplicados=lista=>{
   Object.keys(c).forEach(h=>{if(c[h]>1)d[h]=true;});
   return d;
 };
+
+// Compara o build em execução com o publicado. Se diferirem, este aparelho
+// está rodando de cache velho — o que já causou "o cálculo está errado".
+function useVersaoDesatualizada(){
+  const [nova,setNova]=useState(null);
+  useEffect(()=>{
+    let vivo=true;
+    const conferir=()=>{
+      fetch('./index.html',{cache:'no-store'})
+        .then(r=>r.ok?r.text():null)
+        .then(t=>{
+          if(!vivo||!t)return;
+          const m=t.match(/const APP_BUILD="([^"]+)"/);
+          if(m&&m[1]!==APP_BUILD)setNova(m[1]);
+        }).catch(()=>{});
+    };
+    conferir();
+    const i=setInterval(conferir,300000);
+    document.addEventListener('visibilitychange',conferir);
+    return()=>{vivo=false;clearInterval(i);document.removeEventListener('visibilitychange',conferir);};
+  },[]);
+  return nova;
+}
+
+function BarraAtualizacao({lang}){
+  const nova=useVersaoDesatualizada();
+  if(!nova)return null;
+  const recarregar=async()=>{
+    try{
+      if('caches' in window){const ks=await caches.keys();await Promise.all(ks.map(k=>caches.delete(k)));}
+      if(navigator.serviceWorker){const rs=await navigator.serviceWorker.getRegistrations();await Promise.all(rs.map(r=>r.unregister()));}
+    }catch(_){}
+    location.reload(true);
+  };
+  return <div style={{position:'fixed',left:0,right:0,top:0,zIndex:5000,background:'var(--warning)',color:'#fff',
+      padding:'10px 16px',paddingTop:'max(env(safe-area-inset-top),10px)',display:'flex',alignItems:'center',
+      justifyContent:'center',gap:12,boxShadow:'var(--shadow-md)',flexWrap:'wrap'}}>
+    <span style={{fontSize:13,fontWeight:800}}>{lang.versaoDesatualizada}</span>
+    <button onClick={recarregar} style={{background:'#fff',color:'var(--warning)',border:'none',borderRadius:8,
+      padding:'6px 14px',fontWeight:800,fontSize:12,cursor:'pointer'}}>{lang.versaoRecarregar}</button>
+  </div>;
+}
 
 const SyncCtx=React.createContext(null);
 
@@ -906,7 +955,11 @@ function MenuSobre({lang}){
     </button>
     {aberto&&<div className="fi" style={{marginTop:12,background:'var(--alt)',border:'1px solid var(--border)',borderRadius:14,padding:'18px 16px',display:'flex',flexDirection:'column',gap:14}}>
       <div>
-        <div style={{fontSize:14,fontWeight:800,color:'var(--text)',marginBottom:6}}>PET·CT Dose Pro</div>
+        <div style={{display:'flex',alignItems:'baseline',gap:8,marginBottom:6,flexWrap:'wrap'}}>
+          <span style={{fontSize:14,fontWeight:800,color:'var(--text)'}}>PET·CT Dose Pro</span>
+          <span className="mono" style={{fontSize:11,fontWeight:700,color:'var(--muted)'}}>v{APP_VERSION}</span>
+        </div>
+        <div className="mono" style={{fontSize:11,color:'var(--muted)',fontWeight:600,marginBottom:8}}>{lang.versaoBuild}: {APP_BUILD}</div>
         <div style={{fontSize:13,color:'var(--text-soft)',lineHeight:1.6,fontWeight:500}}>
           Aplicativo clínico corporativo para gerenciamento de doses em exames PET/CT. Realiza cálculo de decaimento radioativo, alocação com distribuição elástica, controle de janela de atividade e registro de dose aplicada.
         </div>
@@ -1786,6 +1839,7 @@ const LANGS_DICT={
     irParaLote:"Ir para Lote",autoDistribuir:"Auto-Distribuir",nenhumAgendamento:"Nenhum agendamento",toqueMais:"Toque para adicionar.",
     autoDistToast:"Auto-Distribuição: {k} pacientes",pacienteRemovido:"Paciente removido",filaAtualizada:"Fila reordenada",arrastarFila:"Arraste para reordenar",
     horarioDuplicado:"Horário de injeção repetido",salaConflito:"Conflito de dose em {n} paciente(s) — confira o registro",
+    versaoBuild:"Build",versaoDesatualizada:"Versão nova disponível. Este aparelho está com uma cópia antiga.",versaoRecarregar:"Atualizar agora",
     salaTitulo:"Sala Compartilhada",salaDesc:"Todos com o código veem a mesma operação em tempo real.",
     salaCodigo:"Código da sala",salaCriar:"Criar sala",salaEntrar:"Entrar",salaSair:"Sair da sala",
     salaCopiar:"Copiar",salaCopiado:"Código copiado",
@@ -1830,6 +1884,7 @@ const LANGS_DICT={
     irParaLote:"Go to Batch",autoDistribuir:"Auto-Distribute",nenhumAgendamento:"No appointments",toqueMais:"Tap to add.",
     autoDistToast:"Auto-Distribution: {k} patients",pacienteRemovido:"Patient removed",filaAtualizada:"Queue reordered",arrastarFila:"Drag to reorder",
     horarioDuplicado:"Duplicate injection time",salaConflito:"Dose conflict on {n} patient(s) — check the record",
+    versaoBuild:"Build",versaoDesatualizada:"New version available. This device is running an old copy.",versaoRecarregar:"Update now",
     salaTitulo:"Shared Room",salaDesc:"Everyone with the code sees the same operation in real time.",
     salaCodigo:"Room code",salaCriar:"Create room",salaEntrar:"Join",salaSair:"Leave room",
     salaCopiar:"Copy",salaCopiado:"Code copied",
@@ -1874,6 +1929,7 @@ const LANGS_DICT={
     irParaLote:"Ir al Lote",autoDistribuir:"Auto-Distribuir",nenhumAgendamento:"Sin pacientes",toqueMais:"Toca para agregar.",
     autoDistToast:"Auto-Distribución: {k} pacientes",pacienteRemovido:"Paciente eliminado",filaAtualizada:"Cola reordenada",arrastarFila:"Arrastra para reordenar",
     horarioDuplicado:"Horario de inyección repetido",salaConflito:"Conflicto de dosis en {n} paciente(s) — revisa el registro",
+    versaoBuild:"Build",versaoDesatualizada:"Nueva versión disponible. Este dispositivo tiene una copia antigua.",versaoRecarregar:"Actualizar ahora",
     salaTitulo:"Sala Compartida",salaDesc:"Todos con el código ven la misma operación en tiempo real.",
     salaCodigo:"Código de sala",salaCriar:"Crear sala",salaEntrar:"Entrar",salaSair:"Salir de la sala",
     salaCopiar:"Copiar",salaCopiado:"Código copiado",
@@ -2012,6 +2068,7 @@ function App(){
   const NAV=[{id:"lote",label:lang.navLote,icon:ICONS.lote},{id:"lista",label:lang.navOperacao,icon:ICONS.lista,badge:lista.length||null},{id:"calc",label:lang.navCalc,icon:ICONS.calc}];
 
   return <SyncCtx.Provider value={ctxSync}>
+    <BarraAtualizacao lang={lang}/>
     <div className={`toast${toast?" on":""}`}>{toast}</div>
     <Menu open={menu} onClose={()=>setMenu(false)} uiMode={uiMode} setUiMode={setUiMode} cfg={cfg} setCfg={setCfg} cor={cor} setCor={setCor} dark={dark} toggleDark={()=>setDark(!dark)} vibOn={vibOn} setVibOn={setVibOn} lang={lang} setLang={setLangId}/>
     
