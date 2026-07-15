@@ -229,8 +229,8 @@ const {useState,useEffect,useMemo,useRef}=React;
    ANTES de cada commit. Serve para você enxergar na tela qual build está
    rodando: service worker cache-first já entregou versão de duas semanas atrás
    como se fosse a atual, escondendo correções de cálculo. */
-const APP_VERSION="3.1";
-const APP_BUILD="2026-07-15T19:42Z";
+const APP_VERSION="3.2";
+const APP_BUILD="2026-07-15T20:07Z";
 
 const ICONS = {
   lote: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M9 3H5a2 2 0 00-2 2v4m6-6h10a2 2 0 012 2v4M9 3v18m0 0h10a2 2 0 002-2V9M9 21H5a2 2 0 01-2-2V9m0 0h18"/></svg>,
@@ -372,6 +372,17 @@ function recalc(lista, ac, vc, hC, t12, perda, fMinG, fMaxG) {
   const atvFinal = atvCorrente; 
   return { lista: lc, atvFinal };
 }
+
+/* Teto do range sugerido acima da dose.
+   Mostrar o maximo clinico do peso (peso x fMax) e verdade isolada, mas engana
+   em contexto: sugere que da para aspirar aquilo, quando se cada um aspirar o
+   topo o frasco nao fecha a fila. O teto util e a dose que o frasco comporta
+   para este paciente depois de garantir o minimo dos demais — que e exatamente
+   doseAplicar. Com frasco folgado, doseAplicar == dPmax e o range nem muda.
+   Paciente ja dosado e excecao: ali doseAplicar == doseReal, entao o teto volta
+   a ser a janela clinica (serve para conferir o que foi dado, e evita mostrar
+   um range invertido tipo "6,4 ~ 5,0" em quem recebeu abaixo do minimo). */
+const tetoSugerido=(p,temReal)=>temReal?p.dPmax:Math.min(p.dPmax,p.doseAplicar);
 
 function getRisco(doseAplicar,dPmin,dPmax,temReal,doseRealVal){
   if(temReal&&doseRealVal<dPmin-0.05)return'danger';
@@ -1193,7 +1204,7 @@ function TelaPrincipal({cfg,setCfg,lista,setLista,cor,onDash,onCalc,setMenuOpen,
                       <td><input className="t-inp mono sm" type="number" step="0.01" value={p.fMin || cfg.fMin} onChange={e=>upd(p.id, {fMin: e.target.value})} style={{width: 65, color:'var(--muted)'}} /></td>
                       <td><input className="t-inp mono sm" type="number" step="0.01" value={p.fMax || cfg.fMax} onChange={e=>upd(p.id, {fMax: e.target.value})} style={{width: 65, color:'var(--muted)'}} /></td>
                       <td>
-                        {parseFloat(p.peso) > 0 && <div style={{fontSize: 10, color: 'var(--muted)', fontWeight: 700, marginBottom: 2}}>{f1(p.dPmin)} ~ {f1(p.dPmax)}</div>}
+                        {parseFloat(p.peso) > 0 && <div title={`${lang.janelaClinica}: ${f1(p.dPmin)} ~ ${f1(p.dPmax)} mCi`} style={{fontSize: 10, color: 'var(--muted)', fontWeight: 700, marginBottom: 2}}>{f1(p.dPmin)} ~ {f1(tetoSugerido(p, temReal))}</div>}
                         <div className="mono" style={{fontWeight:900, color: dColor}}>{f1(p.doseAplicar)}</div>
                       </td>
                       <td><div className="mono" style={{fontWeight:800, color:'var(--success)'}}>{f1(p.disp)}</div></td>
@@ -1397,7 +1408,7 @@ function PatientCard({p,isN,cor,acNum,vcNum,t12,hCalib,calibMin,onUpdate,onDelet
               </>
             )}
             <div style={{marginTop:10,display:'flex',justifyContent:'center',gap:16}}>
-              {[{l:'mín',v:p.dPmin},{l:'máx',v:p.dPmax}].map(({l,v})=>(
+              {[{l:'mín',v:p.dPmin},{l:'máx',v:tetoSugerido(p,temReal)}].map(({l,v})=>(
                 <span key={l} style={{fontSize:11,color:'var(--muted)',fontWeight:600}}>{l} <span className="mono" style={{fontWeight:800,color:'var(--text)',opacity:.7}}>{f1(v)}</span></span>
               ))}
               <span style={{fontSize:11,color:'var(--muted)',fontWeight:600}}>mCi</span>
@@ -1839,7 +1850,7 @@ const LANGS_DICT={
     irParaLote:"Ir para Lote",autoDistribuir:"Auto-Distribuir",nenhumAgendamento:"Nenhum agendamento",toqueMais:"Toque para adicionar.",
     autoDistToast:"Auto-Distribuição: {k} pacientes",pacienteRemovido:"Paciente removido",filaAtualizada:"Fila reordenada",arrastarFila:"Arraste para reordenar",
     horarioDuplicado:"Horário de injeção repetido",salaConflito:"Conflito de dose em {n} paciente(s) — confira o registro",
-    versaoBuild:"Build",versaoDesatualizada:"Versão nova disponível. Este aparelho está com uma cópia antiga.",versaoRecarregar:"Atualizar agora",
+    janelaClinica:"Janela clínica pelo peso",versaoBuild:"Build",versaoDesatualizada:"Versão nova disponível. Este aparelho está com uma cópia antiga.",versaoRecarregar:"Atualizar agora",
     salaTitulo:"Sala Compartilhada",salaDesc:"Todos com o código veem a mesma operação em tempo real.",
     salaCodigo:"Código da sala",salaCriar:"Criar sala",salaEntrar:"Entrar",salaSair:"Sair da sala",
     salaCopiar:"Copiar",salaCopiado:"Código copiado",
@@ -1884,7 +1895,7 @@ const LANGS_DICT={
     irParaLote:"Go to Batch",autoDistribuir:"Auto-Distribute",nenhumAgendamento:"No appointments",toqueMais:"Tap to add.",
     autoDistToast:"Auto-Distribution: {k} patients",pacienteRemovido:"Patient removed",filaAtualizada:"Queue reordered",arrastarFila:"Drag to reorder",
     horarioDuplicado:"Duplicate injection time",salaConflito:"Dose conflict on {n} patient(s) — check the record",
-    versaoBuild:"Build",versaoDesatualizada:"New version available. This device is running an old copy.",versaoRecarregar:"Update now",
+    janelaClinica:"Clinical window by weight",versaoBuild:"Build",versaoDesatualizada:"New version available. This device is running an old copy.",versaoRecarregar:"Update now",
     salaTitulo:"Shared Room",salaDesc:"Everyone with the code sees the same operation in real time.",
     salaCodigo:"Room code",salaCriar:"Create room",salaEntrar:"Join",salaSair:"Leave room",
     salaCopiar:"Copy",salaCopiado:"Code copied",
@@ -1929,7 +1940,7 @@ const LANGS_DICT={
     irParaLote:"Ir al Lote",autoDistribuir:"Auto-Distribuir",nenhumAgendamento:"Sin pacientes",toqueMais:"Toca para agregar.",
     autoDistToast:"Auto-Distribución: {k} pacientes",pacienteRemovido:"Paciente eliminado",filaAtualizada:"Cola reordenada",arrastarFila:"Arrastra para reordenar",
     horarioDuplicado:"Horario de inyección repetido",salaConflito:"Conflicto de dosis en {n} paciente(s) — revisa el registro",
-    versaoBuild:"Build",versaoDesatualizada:"Nueva versión disponible. Este dispositivo tiene una copia antigua.",versaoRecarregar:"Actualizar ahora",
+    janelaClinica:"Ventana clínica por peso",versaoBuild:"Build",versaoDesatualizada:"Nueva versión disponible. Este dispositivo tiene una copia antigua.",versaoRecarregar:"Actualizar ahora",
     salaTitulo:"Sala Compartida",salaDesc:"Todos con el código ven la misma operación en tiempo real.",
     salaCodigo:"Código de sala",salaCriar:"Crear sala",salaEntrar:"Entrar",salaSair:"Salir de la sala",
     salaCopiar:"Copiar",salaCopiado:"Código copiado",
