@@ -26,6 +26,7 @@ const ALVOS = [
   ['linhaParaPac',            /const linhaParaPac=.*?\n/s],
   ['instantePac',             /const instantePac=.*?\n/s],
   ['difPac',                  /const difPac=.*?\n/s],
+  ['tetoSugerido',            /const tetoSugerido=.*?\n/s],
   ['temDose',                 /const temDose=.*?\n/s],
   ['mesclarNaCarga',          /function mesclarNaCarga\(.*?\n\}\n/s],
   ['horariosDuplicados',      /const horariosDuplicados=.*?\n\};/s],
