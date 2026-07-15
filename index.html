@@ -485,15 +485,49 @@ const novaSala=()=>{
   let s="";for(let i=0;i<10;i++)s+=abc[Math.floor(Math.random()*abc.length)];
   return s;
 };
-const pacParaLinha=(sala,p)=>({id:String(p.id),sala_id:sala,nome:p.nome||"",peso:String(p.peso??""),h_sim:p.hSim||"",f_min:String(p.fMin??""),f_max:String(p.fMax??""),dose_real:String(p.doseReal??"")});
+const CAMPOS_PAC=["nome","peso","hSim","fMin","fMax","doseReal"];
+const COL_PAC={nome:"nome",peso:"peso",hSim:"h_sim",fMin:"f_min",fMax:"f_max",doseReal:"dose_real"};
+const valPac=(p,k)=>String((p&&p[k])??"");
+const pacParaLinha=(sala,p)=>{const r={id:String(p.id),sala_id:sala};CAMPOS_PAC.forEach(k=>{r[COL_PAC[k]]=valPac(p,k);});return r;};
 const linhaParaPac=r=>({id:Number(r.id),nome:r.nome||"",peso:r.peso||"",hSim:r.h_sim||"",fMin:r.f_min||"",fMax:r.f_max||"",doseReal:r.dose_real||""});
-const assinaturaPac=p=>[p.nome||"",String(p.peso??""),p.hSim||"",String(p.fMin??""),String(p.fMax??""),String(p.doseReal??"")].join("\u0001");
+// Instantâneo = o que este aparelho sabe que já está no servidor.
+const instantePac=p=>{const o={};CAMPOS_PAC.forEach(k=>{o[k]=valPac(p,k);});return o;};
+// Envia SÓ os campos que mudaram NESTE aparelho. Empurrar a linha inteira fazia
+// um aparelho desatualizado apagar dose registrada por outro: reordenar reescreve
+// doseReal:"" nos pendentes — inócuo localmente, destrutivo no servidor.
+const difPac=(ant,atual)=>{const d={};CAMPOS_PAC.forEach(k=>{const v=valPac(atual,k);if(!ant||ant[k]!==v)d[k]=v;});return d;};
+
+// Um registro de dose administrada nunca pode ser apagado por um valor vazio
+// vindo de um aparelho desatualizado. Na carga, o remoto manda — exceto quando
+// só o local tem dose registrada. Divergência real de dose vira conflito visível.
+const temDose=p=>{const d=parseFloat(p&&p.doseReal);return !isNaN(d)&&d>0;};
+function mesclarNaCarga(locais,remotos){
+  const porId={},conflitos=[],paraEnviar=[];
+  (remotos||[]).forEach(r=>{porId[r.id]={...r};});
+  (locais||[]).forEach(l=>{
+    const r=porId[l.id];
+    if(!r){porId[l.id]={...l};paraEnviar.push(l);return;}
+    if(temDose(l)&&!temDose(r)){porId[l.id]={...l};paraEnviar.push(l);return;}
+    if(temDose(l)&&temDose(r)&&String(l.doseReal)!==String(r.doseReal))
+      conflitos.push({id:l.id,nome:l.nome||r.nome,local:l.doseReal,remoto:r.doseReal});
+  });
+  return {mesclada:Object.values(porId),paraEnviar,conflitos};
+}
+
+// Dois pacientes no mesmo horário de injeção é sempre erro — seja por digitação
+// ou por dois operadores reordenando a fila ao mesmo tempo.
+const horariosDuplicados=lista=>{
+  const c={},d={};
+  (lista||[]).forEach(p=>{if(p.hSim)c[p.hSim]=(c[p.hSim]||0)+1;});
+  Object.keys(c).forEach(h=>{if(c[h]>1)d[h]=true;});
+  return d;
+};
 
 const SyncCtx=React.createContext(null);
 
 /* modoRef: "substituir" = entrei numa sala existente, o servidor manda.
             "enviar"     = criei a sala ou estou retomando/reconectando; empurro o local antes de puxar. */
-function useSalaSync(sala,cfg,setCfg,lista,setLista,modoRef){
+function useSalaSync(sala,cfg,setCfg,lista,setLista,modoRef,onConflito){
   const [status,setStatus]=useState("off");
   const ecoPac=useRef({});
   const ecoCfg=useRef(null);
@@ -521,7 +555,7 @@ function useSalaSync(sala,cfg,setCfg,lista,setLista,modoRef){
           setLista(prev=>prev.filter(x=>x.id!==id));
         }else{
           const p=linhaParaPac(payload.new);
-          ecoPac.current[p.id]=assinaturaPac(p);
+          ecoPac.current[p.id]=instantePac(p);
           setLista(prev=>{
             const i=prev.findIndex(x=>x.id===p.id);
             if(i<0)return[...prev,p];
@@ -547,24 +581,45 @@ function useSalaSync(sala,cfg,setCfg,lista,setLista,modoRef){
     (async()=>{
       try{
         await cli.from("operacao").upsert({sala_id:sala},{onConflict:"sala_id",ignoreDuplicates:true});
-        if(modo==="enviar"){
-          const locais=listaRef.current;
-          if(locais.length)await cli.from("pacientes").upsert(locais.map(p=>pacParaLinha(sala,p)),{onConflict:"sala_id,id"});
-          await cli.from("operacao").upsert({sala_id:sala,cfg:cfgRef.current,updated_at:new Date().toISOString()},{onConflict:"sala_id"});
-        }
+
+        // Puxa o estado da sala ANTES de decidir o que enviar. Empurrar o local
+        // às cegas apagava dose e calibração registradas por outro aparelho.
         const r1=await cli.from("operacao").select("cfg").eq("sala_id",sala).maybeSingle();
         const r2=await cli.from("pacientes").select("*").eq("sala_id",sala);
         if(!vivo)return;
         if(r1.error)throw r1.error;
         if(r2.error)throw r2.error;
+
         const remotos=(r2.data||[]).map(linhaParaPac);
+        let final=remotos,enviar=[],conflitos=[];
+        if(modo==="enviar"){
+          const m=mesclarNaCarga(listaRef.current,remotos);
+          final=m.mesclada; enviar=m.paraEnviar; conflitos=m.conflitos;
+        }
+
         ecoPac.current={};
-        remotos.forEach(p=>{ecoPac.current[p.id]=assinaturaPac(p);});
-        const c=r1.data&&r1.data.cfg;
-        if(c&&Object.keys(c).length){ecoCfg.current=JSON.stringify(c);setCfg(prev=>({...prev,...c}));}
-        setLista(remotos);
+        final.forEach(p=>{ecoPac.current[p.id]=instantePac(p);});
+        if(enviar.length){
+          const{error}=await cli.from("pacientes").upsert(enviar.map(p=>pacParaLinha(sala,p)),{onConflict:"sala_id,id"});
+          if(error)throw error;
+        }
+
+        // Calibração: a sala manda. O local só sobe se a sala ainda não tiver uma.
+        const cR=r1.data&&r1.data.cfg;
+        if(cR&&Object.keys(cR).length){
+          ecoCfg.current=JSON.stringify(cR);
+          setCfg(prev=>({...prev,...cR}));
+        }else if(modo==="enviar"){
+          const cL=cfgRef.current;
+          ecoCfg.current=JSON.stringify(cL);
+          const{error}=await cli.from("operacao").upsert({sala_id:sala,cfg:cL,updated_at:new Date().toISOString()},{onConflict:"sala_id"});
+          if(error)throw error;
+        }
+
+        setLista(final);
         pronto.current=true;
         setStatus("live");
+        if(conflitos.length&&onConflito)onConflito(conflitos);
       }catch(e){
         if(vivo){console.warn("[sala] carga inicial falhou:",e);setStatus("offline");}
       }
@@ -577,18 +632,26 @@ function useSalaSync(sala,cfg,setCfg,lista,setLista,modoRef){
   useEffect(()=>{
     const cli=supaCli();
     if(!sala||!cli||!pronto.current)return;
-    const vistos={},mudou=[];
+    const vistos={},novos=[],patches=[];
     for(const p of lista){
       vistos[p.id]=1;
-      const a=assinaturaPac(p);
-      if(ecoPac.current[p.id]!==a){ecoPac.current[p.id]=a;mudou.push(pacParaLinha(sala,p));}
+      const ant=ecoPac.current[p.id];
+      if(!ant){ecoPac.current[p.id]=instantePac(p);novos.push(p);continue;}
+      const d=difPac(ant,p);
+      if(Object.keys(d).length){ecoPac.current[p.id]=instantePac(p);patches.push({id:p.id,campos:d});}
     }
     const removidos=Object.keys(ecoPac.current).filter(id=>!vistos[id]);
     removidos.forEach(id=>{delete ecoPac.current[id];});
-    if(!mudou.length&&!removidos.length)return;
+    if(!novos.length&&!patches.length&&!removidos.length)return;
     (async()=>{
       try{
-        if(mudou.length){const{error}=await cli.from("pacientes").upsert(mudou,{onConflict:"sala_id,id"});if(error)throw error;}
+        if(novos.length){const{error}=await cli.from("pacientes").upsert(novos.map(p=>pacParaLinha(sala,p)),{onConflict:"sala_id,id"});if(error)throw error;}
+        for(const pt of patches){
+          const set={updated_at:new Date().toISOString()};
+          Object.keys(pt.campos).forEach(k=>{set[COL_PAC[k]]=pt.campos[k];});
+          const{error}=await cli.from("pacientes").update(set).eq("sala_id",sala).eq("id",String(pt.id));
+          if(error)throw error;
+        }
         if(removidos.length){const{error}=await cli.from("pacientes").delete().eq("sala_id",sala).in("id",removidos);if(error)throw error;}
         setStatus(s=>s==="offline"?"live":s);
       }catch(e){console.warn("[sala] envio falhou:",e);setStatus("offline");}
@@ -780,6 +843,7 @@ function TelaPrincipal({cfg,setCfg,lista,setLista,cor,onDash,onCalc,setMenuOpen,
   const {lista:lc,atvFinal}=useMemo(()=>recalc(lista,cfg.aCalib,cfg.vCalib,cfg.hCalib,t12,perda,fMinG,fMxG),[lista,cfg,t12,perda,fMinG,fMxG]);
   const dispList=useMemo(()=>[...lc].sort((a,b)=>getRelMin(a.hSim, cfg.hCalib)-getRelMin(b.hSim, cfg.hCalib)),[lc, cfg.hCalib]);
   const dispIds=useMemo(()=>dispList.map(p=>p.id),[dispList]);
+  const dupHoras=useMemo(()=>horariosDuplicados(lista),[lista]);
 
   const aoReordenar=(idsOrdenados)=>{
     setLista(prev=>reordenarFilaPorPosicao(prev,cfg.hCalib,idsOrdenados));
@@ -974,7 +1038,7 @@ function TelaPrincipal({cfg,setCfg,lista,setLista,cor,onDash,onCalc,setMenuOpen,
                     <tr key={p.id} ref={setRef(p.id)} className={trClassDrag} style={trStyleDrag||undefined}>
                       {gripCell}
                       <td><input className="t-inp txt" value={p.nome} onChange={e=>upd(p.id, {nome: e.target.value})} placeholder={`Paciente ${i+1}`} /></td>
-                      <td><input className="t-inp mono" type="time" value={p.hSim} onChange={e=>upd(p.id, {hSim: e.target.value})} /></td>
+                      <td title={dupHoras[p.hSim]?lang.horarioDuplicado:undefined} style={dupHoras[p.hSim]?{background:'color-mix(in srgb, var(--warning) 14%, transparent)'}:undefined}><input className="t-inp mono" type="time" value={p.hSim} onChange={e=>upd(p.id, {hSim: e.target.value})} style={dupHoras[p.hSim]?{color:'var(--warning)',fontWeight:900}:undefined} />{dupHoras[p.hSim]&&<div style={{fontSize:9,fontWeight:800,color:'var(--warning)',marginTop:2,whiteSpace:'nowrap'}}>{lang.horarioDuplicado}</div>}</td>
                       <td><div className="mono" style={{fontWeight:800, color:'var(--time)'}}>{hSala}</div></td>
                       <td><input className="t-inp mono" type="number" step="1" value={p.peso} onChange={e=>upd(p.id, {peso: e.target.value, doseReal:""})} placeholder="0" style={{width: 60}} /></td>
                       <td><input className="t-inp mono sm" type="number" step="0.01" value={p.fMin || cfg.fMin} onChange={e=>upd(p.id, {fMin: e.target.value})} style={{width: 65, color:'var(--muted)'}} /></td>
@@ -1065,7 +1129,7 @@ function TelaLote({cfg,setCfg,cor,ativa,onLimpar,setMenuOpen,showToast,lang,uiMo
   </div>;
 }
 
-function PatientCard({p,isN,cor,acNum,vcNum,t12,hCalib,calibMin,onUpdate,onDelete,showToast,lang,dragRef,onGrip,dragging,grabbed,dropTop,dropBot,delta}){
+function PatientCard({p,isN,cor,acNum,vcNum,t12,hCalib,calibMin,onUpdate,onDelete,showToast,lang,dragRef,onGrip,dragging,grabbed,dropTop,dropBot,delta,horaDup}){
   const [exp,setExp]=useState(false);
   const doseReal=p.doseReal||"";
   const temReal=parseFloat(doseReal)>0;
@@ -1128,7 +1192,7 @@ function PatientCard({p,isN,cor,acNum,vcNum,t12,hCalib,calibMin,onUpdate,onDelet
                 <span style={{fontSize:24, fontWeight:900, margin:'0 2px', opacity:0.5}}>:</span>
                 <input className="inp-clean" type="number" inputMode="numeric" min="0" max="59" value={mm} onChange={e=>setMm(e.target.value.slice(-2))} style={{width:34, fontSize:24, fontWeight:900, textAlign:'center', fontFamily:'var(--font-mono)'}} />
               </div>
-            ) : <span style={{fontSize:16,fontWeight:700,color:isGuilhotina?'var(--danger)':'var(--text)'}}>{p.hSim}</span>}
+            ) : <span title={horaDup?lang.horarioDuplicado:undefined} style={{fontSize:16,fontWeight:700,color:horaDup?'var(--warning)':isGuilhotina?'var(--danger)':'var(--text)',display:'flex',alignItems:'center',gap:4}}>{p.hSim}{horaDup&&<span style={{fontSize:11,fontWeight:900}}>{ICONS.alert}</span>}</span>}
             
             <span style={{fontSize: exp ? 14 : 12, color:'var(--muted)', fontWeight:600, display:'flex', alignItems:'center', marginLeft: 10}}>
               {exp ? <><input className="inp-clean" type="number" inputMode="decimal" value={peso} onChange={e=>setPeso(e.target.value)} onBlur={()=>onUpdate(p.id, {peso, doseReal:""})} onClick={e=>e.stopPropagation()} style={{width: 44, textAlign:'center', margin:'0 4px', fontSize:15, fontWeight:700, color:'var(--text)'}} /> kg</> : <span>{' • '}{p.peso} kg</span>}
@@ -1210,6 +1274,7 @@ function TelaLista({cfg,setCfg,lista,setLista,cor,onNovo,onDash,ativa,showToast,
   const {lista:lc,atvFinal}=useMemo(()=>recalc(lista,cfg.aCalib,cfg.vCalib,cfg.hCalib,t12,perda,fMinG,fMxG),[lista,cfg,t12,perda,fMinG,fMxG]);
   const dispList=useMemo(()=>[...lc].sort((a,b)=>getRelMin(a.hSim, cfg.hCalib)-getRelMin(b.hSim, cfg.hCalib)),[lc, cfg.hCalib]);
   const dispIds=useMemo(()=>dispList.map(p=>p.id),[dispList]);
+  const dupHoras=useMemo(()=>horariosDuplicados(lista),[lista]);
   const aoReordenar=(idsOrdenados)=>{
     setLista(prev=>reordenarFilaPorPosicao(prev,cfg.hCalib,idsOrdenados));
     showToast(<>{ICONS.check} {lang.filaAtualizada}</>);
@@ -1293,7 +1358,7 @@ function TelaLista({cfg,setCfg,lista,setLista,cor,onNovo,onDash,ativa,showToast,
 
       {dispList.map((p,i)=>( <PatientCard key={p.id} p={p} isN={p.id===proxId} cor={cor} acNum={acN} vcNum={vcNum} t12={t12} hCalib={cfg.hCalib||"09:00"} calibMin={calibMin} onUpdate={upd} onDelete={del} showToast={showToast} lang={lang}
         dragRef={setRef(p.id)} onGrip={(e)=>begin(dispIds,i,e)} dragging={drag.id!=null} grabbed={drag.id===p.id}
-        dropTop={drag.id!=null&&drag.over===i} dropBot={drag.id!=null&&drag.over===dispList.length&&i===dispList.length-1} delta={drag.delta}/> ))}
+        dropTop={drag.id!=null&&drag.over===i} dropBot={drag.id!=null&&drag.over===dispList.length&&i===dispList.length-1} delta={drag.delta} horaDup={!!dupHoras[p.hSim]}/> ))}
     </div>
     <button className="fab" onClick={()=>{vib();onNovo();}}>+</button>
   </div>;
@@ -1624,6 +1689,7 @@ const LANGS_DICT={
     disponivel:"Disponível",dadosFrascoIncompletos:"Dados incompletos. Cálculos de dose podem estar incorretos.",
     irParaLote:"Ir para Lote",autoDistribuir:"Auto-Distribuir",nenhumAgendamento:"Nenhum agendamento",toqueMais:"Toque para adicionar.",
     autoDistToast:"Auto-Distribuição: {k} pacientes",pacienteRemovido:"Paciente removido",filaAtualizada:"Fila reordenada",arrastarFila:"Arraste para reordenar",
+    horarioDuplicado:"Horário de injeção repetido",salaConflito:"Conflito de dose em {n} paciente(s) — confira o registro",
     sala:"Sala Compartilhada",salaDesc:"Todos com o código veem a mesma operação em tempo real.",
     salaCodigo:"Código da sala",salaCriar:"Criar sala",salaEntrar:"Entrar",salaSair:"Sair da sala",
     salaCopiar:"Copiar",salaCopiado:"Código copiado",
@@ -1667,6 +1733,7 @@ const LANGS_DICT={
     disponivel:"Available",dadosFrascoIncompletos:"Vial data incomplete.",
     irParaLote:"Go to Batch",autoDistribuir:"Auto-Distribute",nenhumAgendamento:"No appointments",toqueMais:"Tap to add.",
     autoDistToast:"Auto-Distribution: {k} patients",pacienteRemovido:"Patient removed",filaAtualizada:"Queue reordered",arrastarFila:"Drag to reorder",
+    horarioDuplicado:"Duplicate injection time",salaConflito:"Dose conflict on {n} patient(s) — check the record",
     sala:"Shared Room",salaDesc:"Everyone with the code sees the same operation in real time.",
     salaCodigo:"Room code",salaCriar:"Create room",salaEntrar:"Join",salaSair:"Leave room",
     salaCopiar:"Copy",salaCopiado:"Code copied",
@@ -1710,6 +1777,7 @@ const LANGS_DICT={
     disponivel:"Disponible",dadosFrascoIncompletos:"Datos del vial incompletos.",
     irParaLote:"Ir al Lote",autoDistribuir:"Auto-Distribuir",nenhumAgendamento:"Sin pacientes",toqueMais:"Toca para agregar.",
     autoDistToast:"Auto-Distribución: {k} pacientes",pacienteRemovido:"Paciente eliminado",filaAtualizada:"Cola reordenada",arrastarFila:"Arrastra para reordenar",
+    horarioDuplicado:"Horario de inyección repetido",salaConflito:"Conflicto de dosis en {n} paciente(s) — revisa el registro",
     sala:"Sala Compartida",salaDesc:"Todos con el código ven la misma operación en tiempo real.",
     salaCodigo:"Código de sala",salaCriar:"Crear sala",salaEntrar:"Entrar",salaSair:"Salir de la sala",
     salaCopiar:"Copiar",salaCopiado:"Código copiado",
@@ -1762,7 +1830,10 @@ function App(){
 
   const[sala,setSala]=useState(()=>localStorage.getItem("petct-sala")||"");
   const modoSala=useRef("enviar");
-  const statusSala=useSalaSync(sala,cfg,setCfg,lista,setLista,modoSala);
+  const statusSala=useSalaSync(sala,cfg,setCfg,lista,setLista,modoSala,cs=>{
+    console.warn("[sala] conflito de dose:",cs);
+    showToast(<>{ICONS.alert} {lang.salaConflito.replace("{n}",cs.length)}</>);
+  });
   useEffect(()=>{ if(sala)localStorage.setItem("petct-sala",sala); else localStorage.removeItem("petct-sala"); },[sala]);
   const ctxSync=useMemo(()=>({
     sala,status:statusSala,lang,showToast,
