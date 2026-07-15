@@ -1,0 +1,10 @@
+{
+  "name": "petct-dose-pro-upgrade",
+  "private": true,
+  "version": "3.0.0-test",
+  "description": "PET·CT Dose Pro — upgrade multitela e sincronização de sala",
+  "scripts": {
+    "test": "node tests/sim.js && node tests/fuzz.js 50000",
+    "test:fast": "node tests/sim.js && node tests/fuzz.js 5000"
+  }
+}

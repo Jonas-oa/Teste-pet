@@ -19,6 +19,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
   
   <style>
     :root {
@@ -172,6 +173,13 @@
     #pra-container { display: none; }
     .mono { font-family: var(--font-mono); }
 
+    .drag-grip { display: inline-flex; align-items: center; justify-content: center; color: var(--muted); cursor: grab; touch-action: none; }
+    .drag-grip:active { cursor: grabbing; color: var(--c); }
+    tr.drop-top > td { box-shadow: inset 0 3px 0 var(--c); }
+    tr.drop-bot > td { box-shadow: inset 0 -3px 0 var(--c); }
+    .mode-seg-label { white-space: nowrap; }
+    @media (max-width: 480px) { .mode-seg-label { display: none; } }
+
     @media (min-width: 1024px) {
       .scroll.split-layout { display: flex; flex-direction: row; align-items: stretch; padding: 0 !important; overflow: hidden; }
       .split-left { flex-shrink: 0; overflow-y: auto; overflow-x: hidden; padding: 16px; padding-bottom: max(16px, env(safe-area-inset-bottom)); }
@@ -235,7 +243,10 @@ const ICONS = {
   pdf: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="12" y1="18" x2="12" y2="12"></line><line x1="9" y1="15" x2="15" y2="15"></line></svg>,
   close: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>,
   alert: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>,
-  help: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+  help: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>,
+  grip: <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" stroke="none"><circle cx="9" cy="6" r="1.6"/><circle cx="15" cy="6" r="1.6"/><circle cx="9" cy="12" r="1.6"/><circle cx="15" cy="12" r="1.6"/><circle cx="9" cy="18" r="1.6"/><circle cx="15" cy="18" r="1.6"/></svg>,
+  rows: <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="3" x2="9" y2="21"/></svg>,
+  cards: <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="7" rx="2"/><rect x="3" y="13" width="18" height="7" rx="2"/></svg>
 };
 
 class ErrorBoundary extends React.Component{
@@ -363,6 +374,451 @@ function getRisco(doseAplicar,dPmin,dPmax,temReal,doseRealVal){
   return'danger';
 }
 
+// Reordenação por arrastar (funciona com mouse e toque). Retorna a nova ordem de IDs.
+function useDragReorder(onReorder){
+  const [state,setState]=useState({id:null,delta:0,over:null});
+  const rectsRef=useRef([]);
+  const startYRef=useRef(0);
+  const startIdxRef=useRef(null);
+  const overRef=useRef(null);
+  const elRef=useRef({});
+  const cbRef=useRef(onReorder);
+  cbRef.current=onReorder;
+
+  const setRef=(id)=>(el)=>{ if(el) elRef.current[id]=el; };
+
+  function begin(orderedIds,index,e){
+    if(e.button!=null && e.button!==0) return;
+    e.preventDefault(); e.stopPropagation();
+    rectsRef.current=orderedIds.map(id=>{
+      const el=elRef.current[id];
+      const r=el?el.getBoundingClientRect():null;
+      return r?{id,mid:r.top+r.height/2}:{id,mid:0};
+    });
+    startYRef.current=e.clientY;
+    startIdxRef.current=index;
+    overRef.current=index;
+    try{ e.currentTarget.setPointerCapture(e.pointerId); }catch(_){}
+    document.body.style.userSelect='none';
+    setState({id:orderedIds[index],delta:0,over:index});
+    vib();
+  }
+
+  useEffect(()=>{
+    if(state.id==null) return;
+    const move=(e)=>{
+      if(e.cancelable) e.preventDefault();
+      const y=e.clientY;
+      const rects=rectsRef.current;
+      let over=rects.length;
+      for(let i=0;i<rects.length;i++){ if(y<rects[i].mid){ over=i; break; } }
+      overRef.current=over;
+      const nd=y-startYRef.current;
+      setState(s=>(s.delta===nd&&s.over===over)?s:{...s,delta:nd,over});
+    };
+    const end=()=>{
+      const from=startIdxRef.current, over=overRef.current;
+      const ids=rectsRef.current.map(r=>r.id);
+      if(from!=null && over!=null && ids.length){
+        const moved=ids[from];
+        const without=ids.filter((_,i)=>i!==from);
+        let insertAt=over>from?over-1:over;
+        insertAt=Math.max(0,Math.min(without.length,insertAt));
+        without.splice(insertAt,0,moved);
+        if(without.some((id,i)=>id!==ids[i])) cbRef.current(without);
+      }
+      document.body.style.userSelect='';
+      startIdxRef.current=null; overRef.current=null; rectsRef.current=[];
+      setState({id:null,delta:0,over:null});
+    };
+    window.addEventListener('pointermove',move,{passive:false});
+    window.addEventListener('pointerup',end);
+    window.addEventListener('pointercancel',end);
+    return ()=>{
+      window.removeEventListener('pointermove',move);
+      window.removeEventListener('pointerup',end);
+      window.removeEventListener('pointercancel',end);
+    };
+  },[state.id]);
+
+  return {drag:state,setRef,begin};
+}
+
+// Reatribui os horários da fila por posição, mantendo fixos os pacientes já dosados.
+function reordenarFilaPorPosicao(prev,hCalib,idsOrdenados){
+  const sorted=[...prev].sort((a,b)=>getRelMin(a.hSim,hCalib)-getRelMin(b.hSim,hCalib));
+  const slots=sorted.map(p=>p.hSim);
+  const isAdm=p=>!isNaN(parseFloat(p.doseReal))&&parseFloat(p.doseReal)>0;
+  const admTimes={};
+  sorted.filter(isAdm).forEach(p=>{admTimes[p.hSim]=true;});
+  const freeSlots=slots.filter(t=>!admTimes[t]);
+  const byId={};
+  prev.forEach(p=>{byId[p.id]=p;});
+  const pend=idsOrdenados.filter(id=>byId[id]&&!isAdm(byId[id]));
+  const nt={};
+  pend.forEach((id,i)=>{ nt[id]=freeSlots[i]; });
+  return prev.map(p=>{
+    if(isAdm(p)) return p;
+    const h=nt[p.id];
+    return (h&&h!==p.hSim)?{...p,hSim:h,doseReal:""}:p;
+  });
+}
+
+/* ===================== SALA COMPARTILHADA (Supabase) =====================
+   Preencha as duas constantes abaixo com os dados do seu projeto Supabase.
+   Deixando vazio, o app funciona exatamente como antes (100% local/offline).
+   ATENÇÃO: enquanto a política RLS estiver aberta (ver sala.sql), qualquer
+   pessoa com este arquivo lê todas as salas. Use apenas com nome fictício.
+   Antes de dado real de paciente: Supabase Auth + RLS por usuário.          */
+const SUPA_URL="";
+const SUPA_KEY="";
+
+let _supaCli=null;
+function supaCli(){
+  if(!SUPA_URL||!SUPA_KEY||!window.supabase)return null;
+  if(!_supaCli)_supaCli=window.supabase.createClient(SUPA_URL,SUPA_KEY,{
+    auth:{persistSession:false,autoRefreshToken:false,detectSessionInUrl:false}
+  });
+  return _supaCli;
+}
+const syncConfigurado=()=>!!(SUPA_URL&&SUPA_KEY&&window.supabase);
+
+// JSONB pode voltar do servidor com as chaves em ordem diferente. Esta
+// serialização canônica evita que a própria resposta seja confundida com
+// uma nova edição e entre em ciclo de reenvio.
+function stableStringify(value){
+  if(value===null||typeof value!=="object")return JSON.stringify(value);
+  if(Array.isArray(value))return `[${value.map(stableStringify).join(",")}]`;
+  return `{${Object.keys(value).sort().map(k=>`${JSON.stringify(k)}:${stableStringify(value[k])}`).join(",")}}`;
+}
+
+const SALA_RE=/^[A-HJ-NP-Z2-9]{10}$/;
+const normalizarCodigoSala=v=>String(v||"").toUpperCase().replace(/[^A-Z0-9]/g,"").slice(0,10);
+const codigoSalaValido=v=>SALA_RE.test(normalizarCodigoSala(v));
+const novaSala=()=>{
+  const abc="ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  const bytes=new Uint8Array(10);
+  if(window.crypto&&window.crypto.getRandomValues)window.crypto.getRandomValues(bytes);
+  else for(let i=0;i<bytes.length;i++)bytes[i]=Math.floor(Math.random()*256);
+  return Array.from(bytes,b=>abc[b%abc.length]).join("");
+};
+// Mantém IDs numéricos compatíveis com a versão atual, mas reduz fortemente
+// a chance de colisão entre aparelhos que criam pacientes ao mesmo tempo.
+const novoIdPaciente=()=>Date.now()*1000+Math.floor(Math.random()*1000);
+const CAMPOS_PAC=["nome","peso","hSim","fMin","fMax","doseReal"];
+const COL_PAC={nome:"nome",peso:"peso",hSim:"h_sim",fMin:"f_min",fMax:"f_max",doseReal:"dose_real"};
+const valPac=(p,k)=>String((p&&p[k])??"");
+const pacParaLinha=(sala,p)=>{const r={id:String(p.id),sala_id:sala};CAMPOS_PAC.forEach(k=>{r[COL_PAC[k]]=valPac(p,k);});return r;};
+const linhaParaPac=r=>{const n=Number(r.id);return{id:Number.isSafeInteger(n)?n:r.id,nome:r.nome||"",peso:r.peso||"",hSim:r.h_sim||"",fMin:r.f_min||"",fMax:r.f_max||"",doseReal:r.dose_real||""};};
+// Instantâneo = o que este aparelho sabe que já está no servidor.
+const instantePac=p=>{const o={};CAMPOS_PAC.forEach(k=>{o[k]=valPac(p,k);});return o;};
+// Envia SÓ os campos que mudaram NESTE aparelho. Empurrar a linha inteira fazia
+// um aparelho desatualizado apagar dose registrada por outro: reordenar reescreve
+// doseReal:"" nos pendentes — inócuo localmente, destrutivo no servidor.
+const difPac=(ant,atual)=>{const d={};CAMPOS_PAC.forEach(k=>{const v=valPac(atual,k);if(!ant||ant[k]!==v)d[k]=v;});return d;};
+
+// Um registro de dose administrada nunca pode ser apagado por um valor vazio
+// vindo de um aparelho desatualizado. Na carga, o remoto manda — exceto quando
+// só o local tem dose registrada. Divergência real de dose vira conflito visível.
+const temDose=p=>{const d=parseFloat(p&&p.doseReal);return !isNaN(d)&&d>0;};
+function mesclarNaCarga(locais,remotos){
+  const porId={},conflitos=[],paraEnviar=[];
+  (remotos||[]).forEach(r=>{porId[r.id]={...r};});
+  (locais||[]).forEach(l=>{
+    const r=porId[l.id];
+    if(!r){porId[l.id]={...l};paraEnviar.push(l);return;}
+    if(temDose(l)&&!temDose(r)){porId[l.id]={...l};paraEnviar.push(l);return;}
+    if(temDose(l)&&temDose(r)&&String(l.doseReal)!==String(r.doseReal))
+      conflitos.push({id:l.id,nome:l.nome||r.nome,local:l.doseReal,remoto:r.doseReal});
+  });
+  return {mesclada:Object.values(porId),paraEnviar,conflitos};
+}
+
+// Dois pacientes no mesmo horário de injeção é sempre erro — seja por digitação
+// ou por dois operadores reordenando a fila ao mesmo tempo.
+const horariosDuplicados=lista=>{
+  const c={},d={};
+  (lista||[]).forEach(p=>{if(p.hSim)c[p.hSim]=(c[p.hSim]||0)+1;});
+  Object.keys(c).forEach(h=>{if(c[h]>1)d[h]=true;});
+  return d;
+};
+
+const SyncCtx=React.createContext(null);
+
+/* modoRef: "substituir" = entrei numa sala existente, o servidor manda.
+            "enviar"     = criei a sala ou estou retomando/reconectando; empurro o local antes de puxar. */
+function useSalaSync(sala,cfg,setCfg,lista,setLista,modoRef,onConflito){
+  const [status,setStatus]=useState("off");
+  const ecoPac=useRef({});
+  const ecoCfg=useRef(null);
+  const pronto=useRef(false);
+  const sessaoSync=useRef(0);
+  const envioPacAtivo=useRef(false);
+  const envioPacPendente=useRef(false);
+  const envioCfgAtivo=useRef(false);
+  const envioCfgPendente=useRef(false);
+  const retryPacTimer=useRef(null);
+  const retryCfgTimer=useRef(null);
+  const [retryPac,setRetryPac]=useState(0);
+  const [retryCfg,setRetryCfg]=useState(0);
+  const cfgRef=useRef(cfg); cfgRef.current=cfg;
+  const listaRef=useRef(lista); listaRef.current=lista;
+
+  useEffect(()=>{
+    const cli=supaCli();
+    const sessao=++sessaoSync.current;
+    pronto.current=false; ecoPac.current={}; ecoCfg.current=null;
+    envioPacAtivo.current=false; envioPacPendente.current=false;
+    envioCfgAtivo.current=false; envioCfgPendente.current=false;
+    clearTimeout(retryPacTimer.current); clearTimeout(retryCfgTimer.current);
+    if(!sala){setStatus("off");return;}
+    if(!cli){setStatus("erro");return;}
+    let vivo=true;
+    setStatus("conectando");
+    const modo=modoRef.current||"enviar";
+    modoRef.current="enviar";
+
+    const canal=cli.channel(`sala-${sala}`)
+      .on('postgres_changes',{event:'*',schema:'public',table:'pacientes',filter:`sala_id=eq.${sala}`},payload=>{
+        if(!pronto.current||!vivo)return;
+        if(payload.eventType==='DELETE'){
+          const id=Number(payload.old&&payload.old.id);
+          if(!id)return;
+          delete ecoPac.current[id];
+          setLista(prev=>prev.filter(x=>x.id!==id));
+        }else{
+          const p=linhaParaPac(payload.new);
+          ecoPac.current[p.id]=instantePac(p);
+          setLista(prev=>{
+            const i=prev.findIndex(x=>x.id===p.id);
+            if(i<0)return[...prev,p];
+            const n=[...prev];n[i]={...n[i],...p};return n;
+          });
+        }
+      })
+      .on('postgres_changes',{event:'*',schema:'public',table:'operacao',filter:`sala_id=eq.${sala}`},payload=>{
+        if(!pronto.current||!vivo)return;
+        const c=payload.new&&payload.new.cfg;
+        if(!c||!Object.keys(c).length)return;
+        const s=stableStringify(c);
+        if(s===ecoCfg.current)return;
+        ecoCfg.current=s;
+        setCfg(prev=>({...prev,...c}));
+      })
+      .subscribe(st=>{
+        if(!vivo)return;
+        if(st==='SUBSCRIBED')setStatus(pronto.current?"live":"conectando");
+        else if(st==='CHANNEL_ERROR'||st==='TIMED_OUT'||st==='CLOSED')setStatus("offline");
+      });
+
+    (async()=>{
+      try{
+        await cli.from("operacao").upsert({sala_id:sala},{onConflict:"sala_id",ignoreDuplicates:true});
+
+        // Puxa o estado da sala ANTES de decidir o que enviar. Empurrar o local
+        // às cegas apagava dose e calibração registradas por outro aparelho.
+        const r1=await cli.from("operacao").select("cfg").eq("sala_id",sala).maybeSingle();
+        const r2=await cli.from("pacientes").select("*").eq("sala_id",sala);
+        if(!vivo)return;
+        if(r1.error)throw r1.error;
+        if(r2.error)throw r2.error;
+
+        const remotos=(r2.data||[]).map(linhaParaPac);
+        let final=remotos,enviar=[],conflitos=[];
+        if(modo==="enviar"){
+          const m=mesclarNaCarga(listaRef.current,remotos);
+          final=m.mesclada; enviar=m.paraEnviar; conflitos=m.conflitos;
+        }
+
+        ecoPac.current={};
+        final.forEach(p=>{ecoPac.current[p.id]=instantePac(p);});
+        if(enviar.length){
+          const{error}=await cli.from("pacientes").upsert(enviar.map(p=>pacParaLinha(sala,p)),{onConflict:"sala_id,id"});
+          if(error)throw error;
+        }
+
+        // Calibração: a sala manda. O local só sobe se a sala ainda não tiver uma.
+        const cR=r1.data&&r1.data.cfg;
+        if(cR&&Object.keys(cR).length){
+          ecoCfg.current=stableStringify(cR);
+          setCfg(prev=>({...prev,...cR}));
+        }else if(modo==="enviar"){
+          const cL=cfgRef.current;
+          ecoCfg.current=stableStringify(cL);
+          const{error}=await cli.from("operacao").upsert({sala_id:sala,cfg:cL,updated_at:new Date().toISOString()},{onConflict:"sala_id"});
+          if(error)throw error;
+        }
+
+        setLista(final);
+        pronto.current=true;
+        setStatus("live");
+        if(conflitos.length&&onConflito)onConflito(conflitos);
+      }catch(e){
+        if(vivo){console.warn("[sala] carga inicial falhou:",e);setStatus("offline");}
+      }
+    })();
+
+    return()=>{
+      vivo=false;
+      if(sessaoSync.current===sessao)sessaoSync.current++;
+      clearTimeout(retryPacTimer.current); clearTimeout(retryCfgTimer.current);
+      try{cli.removeChannel(canal);}catch(_){}
+    };
+  },[sala]);
+
+  // envia edições locais de pacientes (linha a linha). O instantâneo local
+  // só avança após confirmação do servidor; em falha, a operação permanece
+  // pendente e é reenviada automaticamente.
+  useEffect(()=>{
+    const cli=supaCli();
+    if(!sala||!cli||!pronto.current)return;
+    if(envioPacAtivo.current){envioPacPendente.current=true;return;}
+
+    const vistos={},novos=[],patches=[];
+    for(const p of lista){
+      vistos[p.id]=1;
+      const ant=ecoPac.current[p.id];
+      const snap=instantePac(p);
+      if(!ant){novos.push({p,snap});continue;}
+      const d=difPac(ant,p);
+      if(Object.keys(d).length)patches.push({id:p.id,campos:d,ant:{...ant},snap});
+    }
+    const removidos=Object.keys(ecoPac.current).filter(id=>!vistos[id]);
+    if(!novos.length&&!patches.length&&!removidos.length)return;
+
+    const sessao=sessaoSync.current;
+    envioPacAtivo.current=true;
+    (async()=>{
+      try{
+        if(novos.length){
+          const{error}=await cli.from("pacientes").upsert(novos.map(x=>pacParaLinha(sala,x.p)),{onConflict:"sala_id,id"});
+          if(error)throw error;
+        }
+        for(const pt of patches){
+          const set={updated_at:new Date().toISOString()};
+          Object.keys(pt.campos).forEach(k=>{set[COL_PAC[k]]=pt.campos[k];});
+          const{error}=await cli.from("pacientes").update(set).eq("sala_id",sala).eq("id",String(pt.id));
+          if(error)throw error;
+        }
+        if(removidos.length){
+          const{error}=await cli.from("pacientes").delete().eq("sala_id",sala).in("id",removidos);
+          if(error)throw error;
+        }
+        if(sessao===sessaoSync.current){
+          novos.forEach(x=>{if(!ecoPac.current[x.p.id])ecoPac.current[x.p.id]=x.snap;});
+          patches.forEach(pt=>{
+            if(stableStringify(ecoPac.current[pt.id])===stableStringify(pt.ant))ecoPac.current[pt.id]=pt.snap;
+          });
+          removidos.forEach(id=>{delete ecoPac.current[id];});
+          setStatus(x=>x==="offline"?"live":x);
+        }
+      }catch(e){
+        console.warn("[sala] envio falhou; nova tentativa agendada:",e);
+        if(sessao===sessaoSync.current){
+          setStatus("offline");
+          clearTimeout(retryPacTimer.current);
+          retryPacTimer.current=setTimeout(()=>setRetryPac(x=>x+1),3000);
+        }
+      }finally{
+        if(sessao===sessaoSync.current){
+          envioPacAtivo.current=false;
+          if(envioPacPendente.current){
+            envioPacPendente.current=false;
+            setRetryPac(x=>x+1);
+          }
+        }
+      }
+    })();
+  },[lista,sala,retryPac]);
+
+  // envia mudanças de calibração/parâmetros com serialização canônica,
+  // trava de concorrência e repetição automática em falha.
+  useEffect(()=>{
+    const cli=supaCli();
+    if(!sala||!cli||!pronto.current)return;
+    const serial=stableStringify(cfg);
+    if(serial===ecoCfg.current)return;
+    if(envioCfgAtivo.current){envioCfgPendente.current=true;return;}
+
+    const sessao=sessaoSync.current;
+    const payload=JSON.parse(JSON.stringify(cfg));
+    envioCfgAtivo.current=true;
+    (async()=>{
+      try{
+        const{error}=await cli.from("operacao").upsert({sala_id:sala,cfg:payload,updated_at:new Date().toISOString()},{onConflict:"sala_id"});
+        if(error)throw error;
+        if(sessao===sessaoSync.current){
+          ecoCfg.current=serial;
+          setStatus(x=>x==="offline"?"live":x);
+        }
+      }catch(e){
+        console.warn("[sala] envio cfg falhou; nova tentativa agendada:",e);
+        if(sessao===sessaoSync.current){
+          setStatus("offline");
+          clearTimeout(retryCfgTimer.current);
+          retryCfgTimer.current=setTimeout(()=>setRetryCfg(x=>x+1),3000);
+        }
+      }finally{
+        if(sessao===sessaoSync.current){
+          envioCfgAtivo.current=false;
+          if(envioCfgPendente.current){
+            envioCfgPendente.current=false;
+            setRetryCfg(x=>x+1);
+          }
+        }
+      }
+    })();
+  },[cfg,sala,retryCfg]);
+
+  return status;
+}
+
+function SalaBadge(){
+  const s=React.useContext(SyncCtx);
+  if(!s||!s.sala)return null;
+  const L=s.lang;
+  const mapa={live:["var(--success)",L.salaAoVivo],conectando:["var(--warning)",L.salaConectando],offline:["var(--danger)",L.salaSemConexao],erro:["var(--danger)",L.salaErro]};
+  const[c,txt]=mapa[s.status]||["var(--muted)",""];
+  return <div title={`${L.salaCodigo}: ${s.sala}`} style={{display:'flex',alignItems:'center',gap:6,background:`color-mix(in srgb, ${c} 12%, transparent)`,border:`1px solid color-mix(in srgb, ${c} 40%, transparent)`,borderRadius:20,padding:'5px 10px',flexShrink:0}}>
+    <span style={{width:8,height:8,borderRadius:'50%',background:c,flexShrink:0}}/>
+    <span className="mode-seg-label" style={{fontSize:11,fontWeight:800,color:c,whiteSpace:'nowrap'}}>{txt}</span>
+  </div>;
+}
+
+function MenuSala({lang}){
+  const s=React.useContext(SyncCtx);
+  const [codigo,setCodigo]=useState("");
+  if(!s)return null;
+  if(!syncConfigurado())return <div className="drw-row" style={{opacity:0.7}}>
+    <span style={{fontWeight:600,fontSize:13,color:'var(--muted)',lineHeight:1.4}}>{lang.salaNaoConfig}</span>
+  </div>;
+  return <div>
+    <div style={{fontSize:11,fontWeight:800,letterSpacing:1.5,textTransform:'uppercase',color:'var(--muted)',marginBottom:12}}>{lang.salaTitulo}</div>
+    {s.sala?(
+      <div style={{display:'flex',flexDirection:'column',gap:10}}>
+        <div className="drw-row">
+          <div style={{minWidth:0}}>
+            <div style={{fontSize:10,fontWeight:800,color:'var(--muted)',textTransform:'uppercase',letterSpacing:1}}>{lang.salaCodigo}</div>
+            <div className="mono" style={{fontSize:20,fontWeight:900,letterSpacing:2,marginTop:2}}>{s.sala}</div>
+          </div>
+          <button className="ghost" style={{height:38,padding:'0 12px',fontSize:12}} onClick={()=>{vib();navigator.clipboard&&navigator.clipboard.writeText(s.sala);s.showToast(lang.salaCopiado);}}>{lang.salaCopiar}</button>
+        </div>
+        <SalaBadge/>
+        <button className="ghost" style={{color:'var(--danger)',borderColor:'color-mix(in srgb,var(--danger) 30%,transparent)'}} onClick={()=>{vib();s.sairSala();}}>{lang.salaSair}</button>
+      </div>
+    ):(
+      <div style={{display:'flex',flexDirection:'column',gap:10}}>
+        <div style={{fontSize:12,color:'var(--text-soft)',lineHeight:1.5,fontWeight:500}}>{lang.salaDesc}</div>
+        <button className="btn" style={{height:44,fontSize:14}} onClick={()=>{vib();s.criarSala();}}>{lang.salaCriar}</button>
+        <div style={{display:'flex',gap:8}}>
+          <input className="inp mono" value={codigo} maxLength={10} onChange={e=>setCodigo(normalizarCodigoSala(e.target.value))} placeholder={lang.salaCodigo} style={{flex:1,letterSpacing:2,fontWeight:800}}/>
+          <button className="ghost" disabled={!codigoSalaValido(codigo)} style={{opacity:codigoSalaValido(codigo)?1:0.4}} onClick={()=>{if(codigoSalaValido(codigo)&&confirm(lang.salaSubstituir)){vib();s.entrarSala(codigo);setCodigo("");}}}>{lang.salaEntrar}</button>
+        </div>
+      </div>
+    )}
+  </div>;
+}
+
 function Fld({label,children,style}){
   return <div style={{minWidth:0,...style}}><label className="lbl">{label}</label>{children}</div>;
 }
@@ -371,6 +827,18 @@ function Toggle({ativo,onChange}){
   return <button className="tog" onClick={onChange} style={{background:ativo?"var(--c)":"var(--bfocus)"}}>
     <div className="tog-k" style={{left:ativo?25:3}}/>
   </button>;
+}
+
+function ModeToggle({uiMode,setUiMode,lang}){
+  const opts=[['table',ICONS.rows,lang.modoTabela],['cards',ICONS.cards,lang.modoCartoes]];
+  return <div style={{display:'flex',background:'var(--alt)',border:'1px solid var(--border)',borderRadius:12,padding:3,gap:2,boxShadow:'var(--shadow-sm)'}}>
+    {opts.map(([m,ic,lb])=>(
+      <button key={m} onClick={()=>{if(uiMode!==m){vib();setUiMode(m);}}} title={lb} aria-pressed={uiMode===m}
+        style={{display:'flex',alignItems:'center',gap:6,border:'none',cursor:'pointer',background:uiMode===m?'var(--surface)':'transparent',color:uiMode===m?'var(--c)':'var(--muted)',borderRadius:9,padding:'7px 10px',fontWeight:700,fontSize:12,transition:'all .2s',boxShadow:uiMode===m?'var(--shadow-sm)':'none'}}>
+        {ic}<span className="mode-seg-label">{lb}</span>
+      </button>
+    ))}
+  </div>;
 }
 
 function MenuComoUsar({lang}){
@@ -456,7 +924,7 @@ function MenuSobre({lang}){
   </div>;
 }
 
-function TelaPrincipal({cfg,setCfg,lista,setLista,cor,onDash,onCalc,setMenuOpen,showToast,lang}){
+function TelaPrincipal({cfg,setCfg,lista,setLista,cor,onDash,onCalc,setMenuOpen,showToast,lang,uiMode,setUiMode,onLimpar}){
   const t12=getT12(cfg.farmaco,cfg.mvCustom);
   const perda=parseFloat(cfg.perda)||4;
   const fMinG=parseFloat(cfg.fMin)||0.08;
@@ -470,6 +938,14 @@ function TelaPrincipal({cfg,setCfg,lista,setLista,cor,onDash,onCalc,setMenuOpen,
 
   const {lista:lc,atvFinal}=useMemo(()=>recalc(lista,cfg.aCalib,cfg.vCalib,cfg.hCalib,t12,perda,fMinG,fMxG),[lista,cfg,t12,perda,fMinG,fMxG]);
   const dispList=useMemo(()=>[...lc].sort((a,b)=>getRelMin(a.hSim, cfg.hCalib)-getRelMin(b.hSim, cfg.hCalib)),[lc, cfg.hCalib]);
+  const dispIds=useMemo(()=>dispList.map(p=>p.id),[dispList]);
+  const dupHoras=useMemo(()=>horariosDuplicados(lista),[lista]);
+
+  const aoReordenar=(idsOrdenados)=>{
+    setLista(prev=>reordenarFilaPorPosicao(prev,cfg.hCalib,idsOrdenados));
+    showToast(<>{ICONS.check} {lang.filaAtualizada}</>);
+  };
+  const {drag,setRef,begin}=useDragReorder(aoReordenar);
 
   function upd(id,updates){ setLista(prev=>prev.map(x=>x.id===id ? {...x,...updates} : x)); }
   function del(id){
@@ -482,7 +958,7 @@ function TelaPrincipal({cfg,setCfg,lista,setLista,cor,onDash,onCalc,setMenuOpen,
     const sorted=[...lista].sort((a,b)=>getRelMin(a.hSim, cfg.hCalib)-getRelMin(b.hSim, cfg.hCalib));
     const gap = Number(cfg.intervalo) || 25;
     const sugerida = sorted.length ? addMin(sorted[sorted.length-1].hSim, gap) : addMin(cfg.hCalib||"08:00",15);
-    setLista(v=>[...v, { id: Date.now(), nome: "", peso: "", hSim: sugerida, fMin: cfg.fMin||"0.08", fMax: cfg.fMax||"0.12", doseReal: "" }]);
+    setLista(v=>[...v, { id: novoIdPaciente(), nome: "", peso: "", hSim: sugerida, fMin: cfg.fMin||"0.08", fMax: cfg.fMax||"0.12", doseReal: "" }]);
   }
 
   // Lógica de Redimensionamento do PC
@@ -526,7 +1002,9 @@ function TelaPrincipal({cfg,setCfg,lista,setLista,cor,onDash,onCalc,setMenuOpen,
         <div style={{fontSize:24,fontWeight:900,letterSpacing:"-0.5px"}}>PET·CT <span style={{color:cor}}>Dose</span></div>
         <div style={{fontSize:12,color:"var(--muted)",fontWeight:600,marginTop:2}}>{dataHoje()}</div>
       </div>
-      <div style={{display:'flex',gap:8}}>
+      <div style={{display:'flex',gap:8,flexWrap:'wrap',justifyContent:'flex-end',alignItems:'center'}}>
+        <SalaBadge/>
+        <ModeToggle uiMode={uiMode} setUiMode={setUiMode} lang={lang}/>
         <button onClick={()=>{vib();onCalc();}} className="ghost" style={{padding:'0 12px'}} title={lang.navCalc}>{ICONS.calc}</button>
         <button onClick={()=>{vib();onDash();}} className="ghost" style={{padding:'0 12px'}} title={lang.dashboard}>{ICONS.dash}</button>
         <button onClick={()=>{vib();setMenuOpen(true);}} className="ghost" style={{padding:'0 12px'}} title={lang.configuracoes}>{ICONS.settings}</button>
@@ -580,6 +1058,8 @@ function TelaPrincipal({cfg,setCfg,lista,setLista,cor,onDash,onCalc,setMenuOpen,
             </div>
           )}
         </div>
+
+        <button onClick={()=>{if(confirm(lang.confirmarApagar)){vib();onLimpar();}}} className="ghost" style={{width:'100%',marginTop:20,color:'var(--danger)',borderColor:'color-mix(in srgb,var(--danger) 30%,transparent)',background:'color-mix(in srgb,var(--danger) 10%,transparent)'}}>{ICONS.trash} {lang.apagarOperacao}</button>
       </div>
 
       <div className="resizer" onMouseDown={handleMouseDown} />
@@ -597,6 +1077,7 @@ function TelaPrincipal({cfg,setCfg,lista,setLista,cor,onDash,onCalc,setMenuOpen,
             <table className="tbl">
               <thead>
                 <tr>
+                  <th style={{width:30}}></th>
                   <th style={{textAlign:'left'}}>{lang.nomePaciente}</th>
                   <th>{lang.horario}</th>
                   <th style={{color:'var(--time)'}}>{lang.sala}</th>
@@ -617,10 +1098,22 @@ function TelaPrincipal({cfg,setCfg,lista,setLista,cor,onDash,onCalc,setMenuOpen,
                   const vol = conc > 0 ? doseExib / conc : null;
                   
                   const hSala = addMin(p.hSim, cfg.uptake || 60);
-                  
+
+                  const grabbed = drag.id===p.id;
+                  const dropTop = drag.id!=null && drag.over===i;
+                  const dropBot = drag.id!=null && drag.over===dispList.length && i===dispList.length-1;
+                  const trStyleDrag = grabbed ? {transform:`translateY(${drag.delta}px)`,position:'relative',zIndex:50,boxShadow:'var(--shadow-lg)',transition:'none'} : null;
+                  const trClassDrag = dropTop?'drop-top':dropBot?'drop-bot':'';
+                  const gripCell = (
+                    <td style={{width:30,padding:'0 2px',textAlign:'center'}}>
+                      <span className="drag-grip" title={temReal?'':lang.arrastarFila} style={{opacity:temReal?0.25:1,cursor:temReal?'not-allowed':'grab'}} onPointerDown={temReal?undefined:(e)=>begin(dispIds,i,e)}>{ICONS.grip}</span>
+                    </td>
+                  );
+
                   if (p.guilhotina) {
                     return (
-                      <tr key={p.id} style={{background: 'color-mix(in srgb, var(--danger) 5%, transparent)'}}>
+                      <tr key={p.id} ref={setRef(p.id)} className={trClassDrag} style={{background: 'color-mix(in srgb, var(--danger) 5%, transparent)', ...(trStyleDrag||{})}}>
+                        {gripCell}
                         <td><input className="t-inp txt" value={p.nome} onChange={e=>upd(p.id, {nome: e.target.value})} style={{color:'var(--danger)'}}/></td>
                         <td><input className="t-inp mono" type="time" value={p.hSim} onChange={e=>upd(p.id, {hSim: e.target.value})} style={{color:'var(--danger)'}}/></td>
                         <td><div className="mono" style={{fontWeight:800, color:'var(--danger)', opacity:0.8}}>{hSala}</div></td>
@@ -638,9 +1131,10 @@ function TelaPrincipal({cfg,setCfg,lista,setLista,cor,onDash,onCalc,setMenuOpen,
                   const dColor = isDoseOk ? 'var(--success)' : 'var(--danger)';
                   
                   return (
-                    <tr key={p.id}>
+                    <tr key={p.id} ref={setRef(p.id)} className={trClassDrag} style={trStyleDrag||undefined}>
+                      {gripCell}
                       <td><input className="t-inp txt" value={p.nome} onChange={e=>upd(p.id, {nome: e.target.value})} placeholder={`Paciente ${i+1}`} /></td>
-                      <td><input className="t-inp mono" type="time" value={p.hSim} onChange={e=>upd(p.id, {hSim: e.target.value})} /></td>
+                      <td title={dupHoras[p.hSim]?lang.horarioDuplicado:undefined} style={dupHoras[p.hSim]?{background:'color-mix(in srgb, var(--warning) 14%, transparent)'}:undefined}><input className="t-inp mono" type="time" value={p.hSim} onChange={e=>upd(p.id, {hSim: e.target.value})} style={dupHoras[p.hSim]?{color:'var(--warning)',fontWeight:900}:undefined} />{dupHoras[p.hSim]&&<div style={{fontSize:9,fontWeight:800,color:'var(--warning)',marginTop:2,whiteSpace:'nowrap'}}>{lang.horarioDuplicado}</div>}</td>
                       <td><div className="mono" style={{fontWeight:800, color:'var(--time)'}}>{hSala}</div></td>
                       <td><input className="t-inp mono" type="number" step="1" value={p.peso} onChange={e=>upd(p.id, {peso: e.target.value, doseReal:""})} placeholder="0" style={{width: 60}} /></td>
                       <td><input className="t-inp mono sm" type="number" step="0.01" value={p.fMin || cfg.fMin} onChange={e=>upd(p.id, {fMin: e.target.value})} style={{width: 65, color:'var(--muted)'}} /></td>
@@ -656,7 +1150,7 @@ function TelaPrincipal({cfg,setCfg,lista,setLista,cor,onDash,onCalc,setMenuOpen,
                     </tr>
                   )
                 })}
-                {!dispList.length && <tr><td colSpan="11" style={{padding:40, color:'var(--muted)', fontWeight:600}}>{lang.nenhumAgendamento}</td></tr>}
+                {!dispList.length && <tr><td colSpan="12" style={{padding:40, color:'var(--muted)', fontWeight:600}}>{lang.nenhumAgendamento}</td></tr>}
               </tbody>
             </table>
           </div>
@@ -666,7 +1160,7 @@ function TelaPrincipal({cfg,setCfg,lista,setLista,cor,onDash,onCalc,setMenuOpen,
   </div>;
 }
 
-function TelaLote({cfg,setCfg,cor,ativa,onLimpar,setMenuOpen,showToast,lang}){
+function TelaLote({cfg,setCfg,cor,ativa,onLimpar,setMenuOpen,showToast,lang,uiMode,setUiMode}){
   const acN=parseFloat(cfg.aCalib)||0,vcN=parseFloat(cfg.vCalib)||0;
   const t12=getT12(cfg.farmaco,cfg.mvCustom);
   const loteCompletoRef=useRef(!!(cfg.aCalib&&cfg.vCalib));
@@ -688,7 +1182,11 @@ function TelaLote({cfg,setCfg,cor,ativa,onLimpar,setMenuOpen,showToast,lang}){
         <div style={{fontSize:24,fontWeight:900,letterSpacing:"-0.5px"}}>PET·CT <span style={{color:cor}}>Dose</span></div>
         <div style={{fontSize:12,color:"var(--muted)",fontWeight:600,marginTop:2}}>{dataHoje()}</div>
       </div>
-      <button onClick={()=>{vib();setMenuOpen(true);}} style={{background:"var(--alt)",border:"1px solid var(--border)",borderRadius:14,padding:"10px 14px",color:"var(--text)",cursor:"pointer",fontWeight:700,fontSize:14,display:'flex',alignItems:'center',gap:8,boxShadow:'var(--shadow-sm)'}}>{ICONS.settings}</button>
+      <div style={{display:'flex',gap:8,alignItems:'center',flexWrap:'wrap',justifyContent:'flex-end'}}>
+        <SalaBadge/>
+        <ModeToggle uiMode={uiMode} setUiMode={setUiMode} lang={lang}/>
+        <button onClick={()=>{vib();setMenuOpen(true);}} style={{background:"var(--alt)",border:"1px solid var(--border)",borderRadius:14,padding:"10px 14px",color:"var(--text)",cursor:"pointer",fontWeight:700,fontSize:14,display:'flex',alignItems:'center',gap:8,boxShadow:'var(--shadow-sm)'}}>{ICONS.settings}</button>
+      </div>
     </div>
     <div className="scroll">
       <div className="sec">{lang.radiofarmacoLote}</div>
@@ -727,7 +1225,7 @@ function TelaLote({cfg,setCfg,cor,ativa,onLimpar,setMenuOpen,showToast,lang}){
   </div>;
 }
 
-function PatientCard({p,isN,cor,acNum,vcNum,t12,hCalib,calibMin,onUpdate,onDelete,showToast,lang}){
+function PatientCard({p,isN,cor,acNum,vcNum,t12,hCalib,calibMin,onUpdate,onDelete,showToast,lang,dragRef,onGrip,dragging,grabbed,dropTop,dropBot,delta,horaDup}){
   const [exp,setExp]=useState(false);
   const doseReal=p.doseReal||"";
   const temReal=parseFloat(doseReal)>0;
@@ -769,9 +1267,15 @@ function PatientCard({p,isN,cor,acNum,vcNum,t12,hCalib,calibMin,onUpdate,onDelet
   function handleBlurHora(e){ const next=e.relatedTarget; if(!e.currentTarget.contains(next)) confirmarHora(); }
   function handleRealChange(val){onUpdate(p.id,{doseReal:val});}
 
+  const rootStyle={border:isN?`2px solid ${cor}`:undefined};
+  if(grabbed){Object.assign(rootStyle,{transform:`translateY(${delta}px) scale(1.02)`,position:'relative',zIndex:60,boxShadow:'var(--shadow-lg)',opacity:0.98,transition:'none'});}
+  else if(dropTop){rootStyle.boxShadow='inset 0 3px 0 var(--c), var(--shadow-sm)';}
+  else if(dropBot){rootStyle.boxShadow='inset 0 -3px 0 var(--c), var(--shadow-sm)';}
+
   return(
-    <div className={`card fi ${hmC}`} style={{border:isN?`2px solid ${cor}`:undefined}}>
-      <div className="pc-row" onClick={()=>{vib();setExp(!exp);}}>
+    <div ref={dragRef} className={`card fi ${hmC}`} style={rootStyle}>
+      <div className="pc-row" onClick={()=>{ if(dragging) return; vib();setExp(!exp);}} style={{gridTemplateColumns:'auto 1fr auto'}}>
+        <span className="drag-grip" title={temReal?'':lang.arrastarFila} style={{marginLeft:-4,padding:'0 2px',opacity:temReal?0.25:1,cursor:temReal?'not-allowed':'grab'}} onClick={e=>e.stopPropagation()} onPointerDown={temReal?undefined:onGrip}>{ICONS.grip}</span>
         <div style={{minWidth:0}}>
           <div className="pc-name" style={{fontSize: exp ? 20 : 16, transition: 'font-size 0.3s cubic-bezier(0.16, 1, 0.3, 1)', color: isGuilhotina ? 'var(--danger)' : 'inherit'}}>
             {isN&&<span style={{color:cor,marginRight:6,fontSize:14}}>✦</span>}
@@ -784,7 +1288,7 @@ function PatientCard({p,isN,cor,acNum,vcNum,t12,hCalib,calibMin,onUpdate,onDelet
                 <span style={{fontSize:24, fontWeight:900, margin:'0 2px', opacity:0.5}}>:</span>
                 <input className="inp-clean" type="number" inputMode="numeric" min="0" max="59" value={mm} onChange={e=>setMm(e.target.value.slice(-2))} style={{width:34, fontSize:24, fontWeight:900, textAlign:'center', fontFamily:'var(--font-mono)'}} />
               </div>
-            ) : <span style={{fontSize:16,fontWeight:700,color:isGuilhotina?'var(--danger)':'var(--text)'}}>{p.hSim}</span>}
+            ) : <span title={horaDup?lang.horarioDuplicado:undefined} style={{fontSize:16,fontWeight:700,color:horaDup?'var(--warning)':isGuilhotina?'var(--danger)':'var(--text)',display:'flex',alignItems:'center',gap:4}}>{p.hSim}{horaDup&&<span style={{fontSize:11,fontWeight:900}}>{ICONS.alert}</span>}</span>}
             
             <span style={{fontSize: exp ? 14 : 12, color:'var(--muted)', fontWeight:600, display:'flex', alignItems:'center', marginLeft: 10}}>
               {exp ? <><input className="inp-clean" type="number" inputMode="decimal" value={peso} onChange={e=>setPeso(e.target.value)} onBlur={()=>onUpdate(p.id, {peso, doseReal:""})} onClick={e=>e.stopPropagation()} style={{width: 44, textAlign:'center', margin:'0 4px', fontSize:15, fontWeight:700, color:'var(--text)'}} /> kg</> : <span>{' • '}{p.peso} kg</span>}
@@ -865,6 +1369,13 @@ function TelaLista({cfg,setCfg,lista,setLista,cor,onNovo,onDash,ativa,showToast,
 
   const {lista:lc,atvFinal}=useMemo(()=>recalc(lista,cfg.aCalib,cfg.vCalib,cfg.hCalib,t12,perda,fMinG,fMxG),[lista,cfg,t12,perda,fMinG,fMxG]);
   const dispList=useMemo(()=>[...lc].sort((a,b)=>getRelMin(a.hSim, cfg.hCalib)-getRelMin(b.hSim, cfg.hCalib)),[lc, cfg.hCalib]);
+  const dispIds=useMemo(()=>dispList.map(p=>p.id),[dispList]);
+  const dupHoras=useMemo(()=>horariosDuplicados(lista),[lista]);
+  const aoReordenar=(idsOrdenados)=>{
+    setLista(prev=>reordenarFilaPorPosicao(prev,cfg.hCalib,idsOrdenados));
+    showToast(<>{ICONS.check} {lang.filaAtualizada}</>);
+  };
+  const {drag,setRef,begin}=useDragReorder(aoReordenar);
   const calibMin=toMin(cfg.hCalib||"09:00");
   const [agora,setAgora]=useState(nowt());
   useEffect(()=>{const t=setInterval(()=>setAgora(nowt()),60000);return()=>clearInterval(t);},[]);
@@ -888,7 +1399,10 @@ function TelaLista({cfg,setCfg,lista,setLista,cor,onNovo,onDash,ativa,showToast,
         <div style={{fontSize:22,fontWeight:900,letterSpacing:"-.5px"}}>{lang.operacaoTab} <span style={{color:cor}}>{lista.length>0?lista.length:""}</span></div>
         <div style={{fontSize:12,color:"var(--muted)",fontWeight:600,marginTop:2}}>{cfg.farmaco}</div>
       </div>
-      <button onClick={()=>{vib();onDash();}} className="ghost" style={{height:42,width:42,padding:0,borderRadius:12}}>{ICONS.dash}</button>
+      <div style={{display:'flex',gap:8,alignItems:'center',flexShrink:0}}>
+        <SalaBadge/>
+        <button onClick={()=>{vib();onDash();}} className="ghost" style={{height:42,width:42,padding:0,borderRadius:12}}>{ICONS.dash}</button>
+      </div>
     </div>
 
     {lista.length>0&&(
@@ -938,7 +1452,9 @@ function TelaLista({cfg,setCfg,lista,setLista,cor,onNovo,onDash,ativa,showToast,
         <div style={{marginTop:8,fontSize:14,fontWeight:500}}>{lang.toqueMais}</div>
       </div>}
 
-      {dispList.map(p=>( <PatientCard key={p.id} p={p} isN={p.id===proxId} cor={cor} acNum={acN} vcNum={vcNum} t12={t12} hCalib={cfg.hCalib||"09:00"} calibMin={calibMin} onUpdate={upd} onDelete={del} showToast={showToast} lang={lang}/> ))}
+      {dispList.map((p,i)=>( <PatientCard key={p.id} p={p} isN={p.id===proxId} cor={cor} acNum={acN} vcNum={vcNum} t12={t12} hCalib={cfg.hCalib||"09:00"} calibMin={calibMin} onUpdate={upd} onDelete={del} showToast={showToast} lang={lang}
+        dragRef={setRef(p.id)} onGrip={(e)=>begin(dispIds,i,e)} dragging={drag.id!=null} grabbed={drag.id===p.id}
+        dropTop={drag.id!=null&&drag.over===i} dropBot={drag.id!=null&&drag.over===dispList.length&&i===dispList.length-1} delta={drag.delta} horaDup={!!dupHoras[p.hSim]}/> ))}
     </div>
     <button className="fab" onClick={()=>{vib();onNovo();}}>+</button>
   </div>;
@@ -1021,7 +1537,7 @@ function TelaNovo({cfg,lista,onAdd,onBack,cor,ativa,showToast,lang}){
       <button className="btn" onClick={()=>{
         if(!nome||!w)return;
         if(getRelMin(h, cfg.hCalib)<0){showToast(lang.injecaoMenorCalib.replace("{h}",h).replace("{c}",cfg.hCalib));return;}
-        vib(); onAdd({id:Date.now(),nome:nome.trim(),peso,hSim:h,fMin:String(fMnC),fMax:String(fMxC),doseReal:""});
+        vib(); onAdd({id:novoIdPaciente(),nome:nome.trim(),peso,hSim:h,fMin:String(fMnC),fMax:String(fMxC),doseReal:""});
         setNome("");setPeso("");showToast(<>{ICONS.check} {lang.pacienteAdicionado}</>);
       }} disabled={!nome||!w} style={{height:56,fontSize:18,marginTop:8, width:'100%'}}>{lang.confirmarSalvar}</button>
     </div>
@@ -1075,6 +1591,8 @@ function Menu({open,onClose,uiMode,setUiMode,cfg,setCfg,cor,setCor,dark,toggleDa
             <div className="drw-row"><span style={{fontWeight:600,fontSize:15,display:'flex',alignItems:'center',gap:10}}><span style={{color:'var(--muted)'}}>{ICONS.vibe}</span> {lang.vibracao}</span><Toggle ativo={vibOn} onChange={()=>{const v=!vibOn;setVibOn(v);_vib=v;}}/></div>
           </div>
         </div>
+        <div className="drw-sep"/>
+        <MenuSala lang={lang}/>
         <div className="drw-sep"/>
         <Fld label={lang.nomeInstituicao}><input className="inp" value={cfg.instituicao||""} onChange={e=>setCfg({...cfg,instituicao:e.target.value})} placeholder={lang.clinicaPlaceholder}/></Fld>
         <div className="drw-sep"/>
@@ -1266,7 +1784,14 @@ const LANGS_DICT={
     apagarOperacao:"Apagar Operação Completa",confirmarApagar:"Zerar toda a operação?",
     disponivel:"Disponível",dadosFrascoIncompletos:"Dados incompletos. Cálculos de dose podem estar incorretos.",
     irParaLote:"Ir para Lote",autoDistribuir:"Auto-Distribuir",nenhumAgendamento:"Nenhum agendamento",toqueMais:"Toque para adicionar.",
-    autoDistToast:"Auto-Distribuição: {k} pacientes",pacienteRemovido:"Paciente removido",
+    autoDistToast:"Auto-Distribuição: {k} pacientes",pacienteRemovido:"Paciente removido",filaAtualizada:"Fila reordenada",arrastarFila:"Arraste para reordenar",
+    horarioDuplicado:"Horário de injeção repetido",salaConflito:"Conflito de dose em {n} paciente(s) — confira o registro",
+    salaTitulo:"Sala Compartilhada",salaDesc:"Todos com o código veem a mesma operação em tempo real.",
+    salaCodigo:"Código da sala",salaCriar:"Criar sala",salaEntrar:"Entrar",salaSair:"Sair da sala",
+    salaCopiar:"Copiar",salaCopiado:"Código copiado",
+    salaAoVivo:"Ao vivo",salaConectando:"Conectando…",salaSemConexao:"Sem conexão",salaErro:"Sincronia indisponível",
+    salaSubstituir:"Entrar nesta sala substitui a operação deste aparelho pelos dados da sala. Continuar?",
+    salaNaoConfig:"Sincronização não configurada neste arquivo (SUPA_URL / SUPA_KEY vazios).",
     horarioInjecao:"Horário de Injeção",doseAplicada:"Dose Aplicada",atividadeLimitada:"atividade limitada",
     atividadeAtual:"Atividade Atual",volumeAspirado:"Volume aspirado",
     novoAgendamento:"Novo Agendamento",cancelar:"Cancelar",nomePaciente:"Nome do Paciente",nomeCompleto:"Nome completo",
@@ -1303,7 +1828,14 @@ const LANGS_DICT={
     apagarOperacao:"Clear Operation",confirmarApagar:"Reset entire operation?",
     disponivel:"Available",dadosFrascoIncompletos:"Vial data incomplete.",
     irParaLote:"Go to Batch",autoDistribuir:"Auto-Distribute",nenhumAgendamento:"No appointments",toqueMais:"Tap to add.",
-    autoDistToast:"Auto-Distribution: {k} patients",pacienteRemovido:"Patient removed",
+    autoDistToast:"Auto-Distribution: {k} patients",pacienteRemovido:"Patient removed",filaAtualizada:"Queue reordered",arrastarFila:"Drag to reorder",
+    horarioDuplicado:"Duplicate injection time",salaConflito:"Dose conflict on {n} patient(s) — check the record",
+    salaTitulo:"Shared Room",salaDesc:"Everyone with the code sees the same operation in real time.",
+    salaCodigo:"Room code",salaCriar:"Create room",salaEntrar:"Join",salaSair:"Leave room",
+    salaCopiar:"Copy",salaCopiado:"Code copied",
+    salaAoVivo:"Live",salaConectando:"Connecting…",salaSemConexao:"No connection",salaErro:"Sync unavailable",
+    salaSubstituir:"Joining this room replaces this device's operation with the room's data. Continue?",
+    salaNaoConfig:"Sync not configured in this file (SUPA_URL / SUPA_KEY empty).",
     horarioInjecao:"Injection Time",doseAplicada:"Administered Dose",atividadeLimitada:"limited activity",
     atividadeAtual:"Current Activity",volumeAspirado:"Aspirated volume",
     novoAgendamento:"New Appointment",cancelar:"Cancel",nomePaciente:"NAME",nomeCompleto:"Full name",
@@ -1340,7 +1872,14 @@ const LANGS_DICT={
     apagarOperacao:"Borrar Operación",confirmarApagar:"¿Resetear toda la operación?",
     disponivel:"Disponible",dadosFrascoIncompletos:"Datos del vial incompletos.",
     irParaLote:"Ir al Lote",autoDistribuir:"Auto-Distribuir",nenhumAgendamento:"Sin pacientes",toqueMais:"Toca para agregar.",
-    autoDistToast:"Auto-Distribución: {k} pacientes",pacienteRemovido:"Paciente eliminado",
+    autoDistToast:"Auto-Distribución: {k} pacientes",pacienteRemovido:"Paciente eliminado",filaAtualizada:"Cola reordenada",arrastarFila:"Arrastra para reordenar",
+    horarioDuplicado:"Horario de inyección repetido",salaConflito:"Conflicto de dosis en {n} paciente(s) — revisa el registro",
+    salaTitulo:"Sala Compartida",salaDesc:"Todos con el código ven la misma operación en tiempo real.",
+    salaCodigo:"Código de sala",salaCriar:"Crear sala",salaEntrar:"Entrar",salaSair:"Salir de la sala",
+    salaCopiar:"Copiar",salaCopiado:"Código copiado",
+    salaAoVivo:"En vivo",salaConectando:"Conectando…",salaSemConexao:"Sin conexión",salaErro:"Sincronía no disponible",
+    salaSubstituir:"Entrar en esta sala reemplaza la operación de este dispositivo por los datos de la sala. ¿Continuar?",
+    salaNaoConfig:"Sincronización no configurada en este archivo (SUPA_URL / SUPA_KEY vacíos).",
     horarioInjecao:"Horario Inyección",doseAplicada:"Dosis Administrada",atividadeLimitada:"actividad limitada",
     atividadeAtual:"Actividad Actual",volumeAspirado:"Volumen aspirado",
     novoAgendamento:"Nuevo Agendamiento",cancelar:"Cancelar",nomePaciente:"NOMBRE",nomeCompleto:"Nombre completo",
@@ -1384,6 +1923,20 @@ function App(){
     try{ return JSON.parse(localStorage.getItem("petct-lista")||"[]"); }
     catch(e){return[];}
   });
+
+  const[sala,setSala]=useState(()=>{const cod=normalizarCodigoSala(localStorage.getItem("petct-sala")||"");return codigoSalaValido(cod)?cod:"";});
+  const modoSala=useRef("enviar");
+  const statusSala=useSalaSync(sala,cfg,setCfg,lista,setLista,modoSala,cs=>{
+    console.warn("[sala] conflito de dose:",cs);
+    showToast(<>{ICONS.alert} {lang.salaConflito.replace("{n}",cs.length)}</>);
+  });
+  useEffect(()=>{ if(sala)localStorage.setItem("petct-sala",sala); else localStorage.removeItem("petct-sala"); },[sala]);
+  const ctxSync=useMemo(()=>({
+    sala,status:statusSala,lang,showToast,
+    criarSala:()=>{modoSala.current="enviar";setSala(novaSala());},
+    entrarSala:c=>{const cod=normalizarCodigoSala(c);if(!codigoSalaValido(cod))return;modoSala.current="substituir";setSala(cod);},
+    sairSala:()=>{modoSala.current="enviar";setSala("");}
+  }),[sala,statusSala,lang]);
 
   useEffect(()=>{localStorage.setItem("petct-cfg",JSON.stringify(cfg));},[cfg]);
   useEffect(()=>{localStorage.setItem("petct-lista",JSON.stringify(lista));},[lista]);
@@ -1458,15 +2011,15 @@ function App(){
 
   const NAV=[{id:"lote",label:lang.navLote,icon:ICONS.lote},{id:"lista",label:lang.navOperacao,icon:ICONS.lista,badge:lista.length||null},{id:"calc",label:lang.navCalc,icon:ICONS.calc}];
 
-  return <>
+  return <SyncCtx.Provider value={ctxSync}>
     <div className={`toast${toast?" on":""}`}>{toast}</div>
     <Menu open={menu} onClose={()=>setMenu(false)} uiMode={uiMode} setUiMode={setUiMode} cfg={cfg} setCfg={setCfg} cor={cor} setCor={setCor} dark={dark} toggleDark={()=>setDark(!dark)} vibOn={vibOn} setVibOn={setVibOn} lang={lang} setLang={setLangId}/>
     
     {uiMode === "table" ? (
-      <TelaPrincipal cfg={cfg} setCfg={setCfg} lista={lista} setLista={setLista} cor={cor} onDash={()=>setTab("dash")} onCalc={()=>setTab("calc")} setMenuOpen={setMenu} showToast={showToast} lang={lang}/>
+      <TelaPrincipal cfg={cfg} setCfg={setCfg} lista={lista} setLista={setLista} cor={cor} onDash={()=>setTab("dash")} onCalc={()=>setTab("calc")} setMenuOpen={setMenu} showToast={showToast} lang={lang} uiMode={uiMode} setUiMode={setUiMode} onLimpar={()=>{setLista([]);setCfg(p=>({...p,aCalib:"",vCalib:"",hCalib:"09:00",lote:""}));}}/>
     ) : (
       <>
-        <TelaLote cfg={cfg} setCfg={setCfg} cor={cor} ativa={tab==="lote"&&!novo} onLimpar={()=>{setLista([]);setCfg(p=>({...p,aCalib:"",vCalib:"",hCalib:"09:00",lote:""}));setTab("lote");}} setMenuOpen={setMenu} showToast={showToast} lang={lang}/>
+        <TelaLote cfg={cfg} setCfg={setCfg} cor={cor} ativa={tab==="lote"&&!novo} onLimpar={()=>{setLista([]);setCfg(p=>({...p,aCalib:"",vCalib:"",hCalib:"09:00",lote:""}));setTab("lote");}} setMenuOpen={setMenu} showToast={showToast} lang={lang} uiMode={uiMode} setUiMode={setUiMode}/>
         <TelaLista cfg={cfg} setCfg={setCfg} lista={lista} setLista={setLista} cor={cor} onNovo={()=>setNovo(true)} onDash={()=>setTab("dash")} ativa={tab==="lista"&&!novo} showToast={showToast} onIrLote={()=>setTab("lote")} lang={lang}/>
         <TelaNovo cfg={cfg} lista={lista} onAdd={p=>{setLista(v=>[...v,p]);setNovo(false);setTab("lista");}} onBack={()=>setNovo(false)} cor={cor} ativa={novo} showToast={showToast} lang={lang}/>
         {!novo&&tab!=="dash"&&tab!=="calc"&&<nav className="nav">
@@ -1483,7 +2036,7 @@ function App(){
 
     {tab==="calc" && <TelaCalc cor={cor} ativa={true} onFechar={()=>setTab(uiMode==="table"?"main":"lista")} lang={lang}/>}
     {tab==="dash" && <TelaDash cfg={cfg} lista={lista} cor={cor} onFechar={()=>setTab(uiMode==="table"?"main":"lista")} lang={lang}/>}
-  </>;
+  </SyncCtx.Provider>;
 }
 
 ReactDOM.createRoot(document.getElementById("root")).render(<ErrorBoundary><App/></ErrorBoundary>);
