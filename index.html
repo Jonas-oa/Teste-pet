@@ -682,6 +682,13 @@ function useSalaSync(sala,cfg,setCfg,lista,setLista,modoRef,onConflito){
           setLista(prev=>prev.filter(x=>x.id!==id));
         }else{
           const p=linhaParaPac(payload.new);
+          // Se há uma edição local ainda não sincronizada para este paciente
+          // (o usuário está digitando), o eco do servidor NÃO pode sobrescrever:
+          // o round-trip devolvia um valor mais velho e o último caractere
+          // digitado sumia. A edição local sobe no próximo envio. Sem edição
+          // pendente, aplica normalmente (preserva a convergência entre telas).
+          const local=listaRef.current.find(x=>x.id===p.id);
+          if(local&&stableStringify(instantePac(local))!==stableStringify(ecoPac.current[p.id]))return;
           ecoPac.current[p.id]=instantePac(p);
           setLista(prev=>{
             const i=prev.findIndex(x=>x.id===p.id);

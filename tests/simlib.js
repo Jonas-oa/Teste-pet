@@ -103,6 +103,9 @@ class Cliente {
       }else{
         if(ev.new.sala_id!==this.sala) return;
         const p=linhaParaPac(ev.new);
+        // Espelha o app: eco não sobrescreve edição local ainda não sincronizada.
+        const localP=this.lista.find(x=>x.id===p.id);
+        if(localP&&stableStringify(instantePac(localP))!==stableStringify(this.ecoPac[p.id])) return;
         this.ecoPac[p.id]=instantePac(p);
         const i=this.lista.findIndex(x=>x.id===p.id);
         if(i<0) this.lista=[...this.lista,p];
