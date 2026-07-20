@@ -545,7 +545,7 @@ function stableStringify(value){
 }
 
 const SALA_RE=/^[A-HJ-NP-Z2-9]{10}$/;
-const normalizarCodigoSala=v=>String(v||"").toUpperCase().replace(/[^A-Z0-9]/g,"").slice(0,10);
+const normalizarCodigoSala=v=>String(v||"").toUpperCase().replace(/[^A-HJ-NP-Z2-9]/g,"").slice(0,10);
 const codigoSalaValido=v=>SALA_RE.test(normalizarCodigoSala(v));
 const novaSala=()=>{
   const abc="ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -1389,7 +1389,7 @@ function PatientCard({p,isN,cor,acNum,vcNum,t12,hCalib,calibMin,onUpdate,onDelet
             ) : <span title={horaDup?lang.horarioDuplicado:undefined} style={{fontSize:16,fontWeight:700,color:horaDup?'var(--warning)':isGuilhotina?'var(--danger)':'var(--text)',display:'flex',alignItems:'center',gap:4}}>{p.hSim}{horaDup&&<span style={{fontSize:11,fontWeight:900}}>{ICONS.alert}</span>}</span>}
             
             <span style={{fontSize: exp ? 14 : 12, color:'var(--muted)', fontWeight:600, display:'flex', alignItems:'center', marginLeft: 10}}>
-              {exp ? <><input className="inp-clean" type="number" inputMode="decimal" value={peso} onChange={e=>setPeso(e.target.value)} onBlur={()=>onUpdate(p.id, {peso, doseReal:""})} onClick={e=>e.stopPropagation()} style={{width: 44, textAlign:'center', margin:'0 4px', fontSize:15, fontWeight:700, color:'var(--text)'}} /> kg</> : <span>{' • '}{p.peso} kg</span>}
+              {exp ? <><input className="inp-clean" type="number" inputMode="decimal" value={peso} onChange={e=>setPeso(e.target.value)} onBlur={()=>onUpdate(p.id, peso!==p.peso?{peso, doseReal:""}:{peso})} onClick={e=>e.stopPropagation()} style={{width: 44, textAlign:'center', margin:'0 4px', fontSize:15, fontWeight:700, color:'var(--text)'}} /> kg</> : <span>{' • '}{p.peso} kg</span>}
             </span>
           </div>
         </div>
@@ -1422,11 +1422,11 @@ function PatientCard({p,isN,cor,acNum,vcNum,t12,hCalib,calibMin,onUpdate,onDelet
             <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:12, marginBottom:18}}>
               <div style={{background:'var(--alt)', border:'1px solid var(--border)', borderRadius:14, padding:'10px 14px'}}>
                 <div style={{fontSize:10, fontWeight:800, color:'var(--muted)', textTransform:'uppercase'}}>{lang.doseMin} (mCi/kg)</div>
-                <input className="inp-clean" type="number" step="0.01" value={fMin} onChange={e=>setFMin(e.target.value)} onBlur={()=>onUpdate(p.id, {fMin, doseReal:""})} style={{fontSize:16, fontWeight:700, color:'var(--text)', width:'100%', marginTop:4}} onClick={e=>e.stopPropagation()}/>
+                <input className="inp-clean" type="number" step="0.01" value={fMin} onChange={e=>setFMin(e.target.value)} onBlur={()=>onUpdate(p.id, fMin!==(p.fMin||"0.08")?{fMin, doseReal:""}:{fMin})} style={{fontSize:16, fontWeight:700, color:'var(--text)', width:'100%', marginTop:4}} onClick={e=>e.stopPropagation()}/>
               </div>
               <div style={{background:'var(--alt)', border:'1px solid var(--border)', borderRadius:14, padding:'10px 14px'}}>
                 <div style={{fontSize:10, fontWeight:800, color:'var(--muted)', textTransform:'uppercase'}}>{lang.doseMax} (mCi/kg)</div>
-                <input className="inp-clean" type="number" step="0.01" value={fMax} onChange={e=>setFMax(e.target.value)} onBlur={()=>onUpdate(p.id, {fMax, doseReal:""})} style={{fontSize:16, fontWeight:700, color:'var(--text)', width:'100%', marginTop:4}} onClick={e=>e.stopPropagation()}/>
+                <input className="inp-clean" type="number" step="0.01" value={fMax} onChange={e=>setFMax(e.target.value)} onBlur={()=>onUpdate(p.id, fMax!==(p.fMax||"0.12")?{fMax, doseReal:""}:{fMax})} style={{fontSize:16, fontWeight:700, color:'var(--text)', width:'100%', marginTop:4}} onClick={e=>e.stopPropagation()}/>
               </div>
             </div>
             {!isGuilhotina && (
@@ -1622,7 +1622,7 @@ function TelaNovo({cfg,lista,onAdd,onBack,cor,ativa,showToast,lang}){
         )}
       </div>
       <div style={{display:'flex',gap:10,marginBottom:16}}>
-        {[[lang.injecao,h],[lang.sala,addMin(h,cfg.uptake||UPTAKE)],[lang.termino,addMin(addMin(h,cfg.uptake||UPTAKE),25)]].map(([l,v])=>(
+        {[[lang.injecao,h],[lang.sala,addMin(h,cfg.uptake||UPTAKE)],[lang.termino,addMin(addMin(h,cfg.uptake||UPTAKE),parseInt(cfg.intervalo)||25)]].map(([l,v])=>(
           <div key={l} style={{flex:1,background:'var(--surface)',border:'1px solid var(--border)',borderRadius:14,padding:'12px 8px',textAlign:'center',boxShadow:'var(--shadow-sm)'}}>
             <div style={{fontSize:10,fontWeight:800,color:'var(--muted)',textTransform:'uppercase',marginBottom:4}}>{l}</div><div className="mono" style={{fontSize:16,fontWeight:900}}>{v}</div>
           </div>
@@ -1871,7 +1871,7 @@ const LANGS_DICT={
     guiaComoUsar:"Como Usar",
     guiaPasso1Tit:"Calibração do Frasco", guiaPasso1Txt:"No topo da tela Tabela ou na aba Lote, insira a Atividade inicial (mCi), o Volume (mL) e o Horário em que o frasco foi calibrado.",
     guiaPasso2Tit:"Parâmetros Padrão", guiaPasso2Txt:"Ajuste a 'Janela de Dose' para definir os fatores multiplicadores mínimos e máximos por quilo (mCi/kg), e o tempo de gap (intervalo) padrão entre os pacientes.",
-    guiaPasso3Tit:"Auto-Distribuição", guiaPasso3Txt:"Ao adicionar pacientes, o motor matemático aloca as doses usando distribuição elástica. Ele garante matematicamente o mínimo para todos e distribui as sobras proprocionalmente.",
+    guiaPasso3Tit:"Auto-Distribuição", guiaPasso3Txt:"Ao adicionar pacientes, o motor matemático aloca as doses usando distribuição elástica. Ele garante matematicamente o mínimo para todos e distribui as sobras proporcionalmente.",
     guiaPasso4Tit:"Registro da Dose Real", guiaPasso4Txt:"Ao aspirar a dose definitiva para a seringa, digite no campo 'Real'. O sistema irá travar este valor consumido e redistribuir o líquido restante no frasco para os próximos exames.",
     guiaGuilhotinaTit:"Efeito Guilhotina", guiaGuilhotinaTxt:"Se após administrar doses o frasco ficar com líquido insuficiente para atingir a dose mínima do próximo paciente, ele será cortado (marcado em vermelho) protegendo contra injeções sub-doses.",
     loteTab:"Lote",operacaoTab:"Operação",calcTab:"Calculadora",
@@ -1899,7 +1899,7 @@ const LANGS_DICT={
     injecaoMenorCalib:"Injeção ({h}) < Calibração ({c})",calibDepoisDeDose:"Calibração ({c}) posterior a dose registrada ({h}) — alteração desfeita",pacienteAdicionado:"Paciente adicionado!",
     editarPaciente:"Editar Paciente",voltar:"← Voltar",dadosPaciente:"Dados",excluirPaciente:"Excluir Paciente",confirmarExclusao:"Excluir {nome}?",
     excluir:"Excluir",dashboard:"Dashboard",usoFrasco:"Uso do Frasco",eficiencia:"EFICIÊNCIA",
-    administrado:"Administrado",restante:"Restante",calibrado:"Calibrated",pacientes:"Pacientes",
+    administrado:"Administrado",restante:"Restante",calibrado:"Calibrado",pacientes:"Pacientes",
     calcDecaimento:"Calculadora",atividadeInicial:"Atividade Inicial (mCi)",horaInicial:"Hora Inicial",horaAlvo:"Hora Alvo",resultado:"Resultado",decorrido:"Decorrido",fator:"Fator",
     pdfEntradaSala:"Entrada",pdfDoseInjetada:"Injetada",pdfVolume:"Volume",pdfFator:"Fator",pdfDoseMin:"Dose Mín",pdfDoseMax:"Dose Máx",
     pdfPaciente:"Paciente",pdfPeso:"Peso",pdfResumo:"Resumo",pdfLote:"Lote",pdfAssinatura:"Assinatura",pdfResponsavel:"Responsável",pdfSemRegistros:"Sem registros.",
