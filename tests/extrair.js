@@ -19,6 +19,8 @@ const ALVOS = [
   ['getRelMin',               /const getRelMin=.*?\n\};/s],
   ['recalc',                  /function recalc\(.*?\n\}\n/s],
   ['reordenarFilaPorPosicao', /function reordenarFilaPorPosicao\(.*?\n\}\n/s],
+  ['doseRegistradaAntesDe',   /function doseRegistradaAntesDe\(.*?\n\}\n/s],
+  ['redistribuirAposCalibracao', /function redistribuirAposCalibracao\(.*?\n\}\n/s],
   ['CAMPOS_PAC',              /const CAMPOS_PAC=.*?\n/s],
   ['COL_PAC',                 /const COL_PAC=.*?\n/s],
   ['valPac',                  /const valPac=.*?\n/s],

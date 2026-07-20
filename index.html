@@ -274,7 +274,7 @@ const toMin=t=>{if(!t||!t.includes(':'))return 0;const[h,m]=t.split(":").map(Num
 const minsToTime=m=>{let v=m;if(v<0)v+=1440;return`${String(Math.floor(v/60)%24).padStart(2,'0')}:${String(v%60).padStart(2,'0')}`;};
 const addMin=(t,d)=>minsToTime(toMin(t)+d);
 const decair=(a,t12,dt)=>a*Math.pow(2,-dt/t12);
-const f1=v=>(v==null||isNaN(v))?"—":v.toFixed(1);
+const f1=v=>(v==null||isNaN(v))?"—":(Math.abs(v)<0.05?0:v).toFixed(1);
 const mbq=v=>isNaN(v)?"—":(v*37).toFixed(0);
 const nowt=()=>{const n=new Date();return`${String(n.getHours()).padStart(2,"0")}:${String(n.getMinutes()).padStart(2,"0")}`;};
 const dataHoje=()=>new Date().toLocaleDateString("pt-BR",{weekday:"long",day:"2-digit",month:"long",year:"numeric"});
@@ -479,6 +479,40 @@ function reordenarFilaPorPosicao(prev,hCalib,idsOrdenados){
     if(isAdm(p)) return p;
     const h=nt[p.id];
     return (h&&h!==p.hSim)?{...p,hSim:h,doseReal:""}:p;
+  });
+}
+
+/* Correção B1: uma dose já registrada define um fato físico — a calibração
+   não pode ser movida para depois dela. Compara tudo no referencial da
+   calibração ANTIGA (hRef), onde todos os horários são válidos, para não
+   sofrer o wrap de meia-noite do getRelMin. Retorna o primeiro paciente
+   em conflito, ou null se a mudança é permitida. */
+function doseRegistradaAntesDe(lista,hRef,hNova){
+  const limite=getRelMin(hNova,hRef);
+  return lista.find(p=>!isNaN(parseFloat(p.doseReal))&&parseFloat(p.doseReal)>0
+    &&getRelMin(p.hSim,hRef)<limite)||null;
+}
+
+/* Correção A: redistribui os horários dos pendentes após mudança de
+   calibração/intervalo. O cursor de horários é MONOTÔNICO: pacientes com
+   dose registrada mantêm o horário original, mas nunca puxam o cursor
+   para trás — nenhum pendente recebe horário anterior a hNova+15 nem
+   anterior ao slot já emitido. Pré-condição: doseRegistradaAntesDe===null. */
+function redistribuirAposCalibracao(prevLista,hAntiga,hNova,intervalo){
+  if(!prevLista.length) return prevLista;
+  const ref=hAntiga||hNova;
+  const ordenada=[...prevLista].sort((a,b)=>getRelMin(a.hSim,ref)-getRelMin(b.hSim,ref));
+  const gap=Number(intervalo)||25;
+  let cursor=addMin(hNova,15);
+  return ordenada.map(p=>{
+    if(!isNaN(parseFloat(p.doseReal))&&parseFloat(p.doseReal)>0){
+      const aposDose=addMin(p.hSim,gap);
+      if(getRelMin(aposDose,hNova)>getRelMin(cursor,hNova)) cursor=aposDose;
+      return p;
+    }
+    const novoHorario=cursor;
+    cursor=addMin(cursor,gap);
+    return p.hSim!==novoHorario?{...p,hSim:novoHorario}:p;
   });
 }
 
@@ -1862,7 +1896,7 @@ const LANGS_DICT={
     novoAgendamento:"Novo Agendamento",cancelar:"Cancelar",nomePaciente:"Nome do Paciente",nomeCompleto:"Nome completo",
     pesoKg:"Peso (kg)",horaInjecao:"Hora de Injeção",injecao:"Injeção",sala:"Sala",termino:"Término",
     doseAlvo:"Dose Alvo",minima:"Mínima",maxima:"Máxima",confirmarSalvar:"Confirmar e Salvar",
-    injecaoMenorCalib:"Injeção ({h}) < Calibração ({c})",pacienteAdicionado:"Paciente adicionado!",
+    injecaoMenorCalib:"Injeção ({h}) < Calibração ({c})",calibDepoisDeDose:"Calibração ({c}) posterior a dose registrada ({h}) — alteração desfeita",pacienteAdicionado:"Paciente adicionado!",
     editarPaciente:"Editar Paciente",voltar:"← Voltar",dadosPaciente:"Dados",excluirPaciente:"Excluir Paciente",confirmarExclusao:"Excluir {nome}?",
     excluir:"Excluir",dashboard:"Dashboard",usoFrasco:"Uso do Frasco",eficiencia:"EFICIÊNCIA",
     administrado:"Administrado",restante:"Restante",calibrado:"Calibrated",pacientes:"Pacientes",
@@ -1907,7 +1941,7 @@ const LANGS_DICT={
     novoAgendamento:"New Appointment",cancelar:"Cancel",nomePaciente:"NAME",nomeCompleto:"Full name",
     pesoKg:"WEIGHT",horaInjecao:"Injection Time",injecao:"Injection",sala:"Room",termino:"End",
     doseAlvo:"Target Dose",minima:"Minimum",maxima:"Maximum",confirmarSalvar:"Confirm & Save",
-    injecaoMenorCalib:"Injection ({h}) < Calibration ({c})",pacienteAdicionado:"Patient added!",
+    injecaoMenorCalib:"Injection ({h}) < Calibration ({c})",calibDepoisDeDose:"Calibration ({c}) is after a recorded dose ({h}) — change reverted",pacienteAdicionado:"Patient added!",
     editarPaciente:"Edit Patient",voltar:"← Back",dadosPaciente:"Data",excluirPaciente:"Delete Patient",confirmarExclusao:"Delete {nome}?",
     excluir:"Delete",dashboard:"Dashboard",usoFrasco:"Usage",eficiencia:"EFFIC.",
     administrado:"Administered",restante:"Remaining",calibrado:"Calibrated",pacientes:"Patients",
@@ -1952,7 +1986,7 @@ const LANGS_DICT={
     novoAgendamento:"Nuevo Agendamiento",cancelar:"Cancelar",nomePaciente:"NOMBRE",nomeCompleto:"Nombre completo",
     pesoKg:"PESO",horaInjecao:"Hora Inyección",injecao:"Inyección",sala:"Sala",termino:"Fin",
     doseAlvo:"Dosis Objetivo",minima:"Mínima",maxima:"Máxima",confirmarSalvar:"Confirmar y Guardar",
-    injecaoMenorCalib:"Inyección ({h}) < Calibración ({c})",pacienteAdicionado:"¡Paciente agregado!",
+    injecaoMenorCalib:"Inyección ({h}) < Calibración ({c})",calibDepoisDeDose:"Calibración ({c}) posterior a una dosis registrada ({h}) — cambio revertido",pacienteAdicionado:"¡Paciente agregado!",
     editarPaciente:"Editar",voltar:"← Volver",dadosPaciente:"Datos",excluirPaciente:"Eliminar",confirmarExclusao:"¿Eliminar {nome}?",
     excluir:"Eliminar",dashboard:"Dashboard",usoFrasco:"Uso",eficiencia:"EFIC.",
     administrado:"Administrado",restante:"Restante",calibrado:"Calibrado",pacientes:"Pacientes",
@@ -2024,30 +2058,24 @@ function App(){
     const fMaxChanged = cfg.fMax !== prevFMax.current;
 
     if (hCalibChanged || intervaloChanged || fMinChanged || fMaxChanged) {
+      // Correção B1: bloqueia calibração posterior a uma dose já registrada.
+      if (hCalibChanged) {
+        const conflito = doseRegistradaAntesDe(lista, prevHCalib.current || cfg.hCalib, cfg.hCalib);
+        if (conflito) {
+          const hAnterior = prevHCalib.current;
+          showToast(<>{ICONS.alert} {lang.calibDepoisDeDose.replace("{c}", cfg.hCalib).replace("{h}", conflito.hSim)}</>);
+          setCfg(prev => ({ ...prev, hCalib: hAnterior }));
+          return; // não redistribui nem consolida prevHCalib
+        }
+      }
+
       setLista(prevLista => {
         let novaLista = [...prevLista];
         let modificou = false;
 
         if (hCalibChanged || intervaloChanged) {
-          if (novaLista.length > 0) {
-            novaLista.sort((a, b) => getRelMin(a.hSim, prevHCalib.current || cfg.hCalib) - getRelMin(b.hSim, prevHCalib.current || cfg.hCalib));
-            let currentTime = addMin(cfg.hCalib, 15);
-            const gap = Number(cfg.intervalo) || 25;
-
-            novaLista = novaLista.map(p => {
-              if (!isNaN(parseFloat(p.doseReal)) && parseFloat(p.doseReal) > 0) {
-                currentTime = addMin(p.hSim, gap); 
-                return p;
-              }
-              let novoHorario = currentTime;
-              currentTime = addMin(currentTime, gap);
-              if (p.hSim !== novoHorario) {
-                modificou = true;
-                return { ...p, hSim: novoHorario };
-              }
-              return p;
-            });
-          }
+          novaLista = redistribuirAposCalibracao(prevLista, prevHCalib.current, cfg.hCalib, cfg.intervalo);
+          modificou = novaLista.some(p => prevLista.indexOf(p) === -1);
         }
 
         if (fMinChanged || fMaxChanged) {
@@ -2068,7 +2096,7 @@ function App(){
       prevFMin.current = cfg.fMin;
       prevFMax.current = cfg.fMax;
     }
-  }, [cfg.hCalib, cfg.intervalo, cfg.fMin, cfg.fMax]);
+  }, [cfg.hCalib, cfg.intervalo, cfg.fMin, cfg.fMax, lista]);
 
   useEffect(()=>{
     localStorage.setItem("petct-ui-mode",uiMode);

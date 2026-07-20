@@ -5,8 +5,8 @@
   "description": "PET·CT Dose Pro — upgrade multitela e sincronização de sala",
   "scripts": {
     "extrair": "node tests/extrair.js",
-    "test": "npm run extrair && node tests/sim.js && node tests/fuzz.js 50000",
-    "test:fast": "npm run extrair && node tests/sim.js && node tests/fuzz.js 5000",
+    "test": "npm run extrair && node tests/sim.js && node tests/calib.js && node tests/fuzz.js 50000",
+    "test:fast": "npm run extrair && node tests/sim.js && node tests/calib.js && node tests/fuzz.js 5000",
     "versao": "node ferramentas/marcar-versao.js"
   }
 }
